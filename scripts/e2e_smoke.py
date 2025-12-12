@@ -15,6 +15,7 @@ Flow:
 
 from __future__ import annotations
 
+import sys
 import json
 import logging
 import argparse
@@ -22,6 +23,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from core.rag import RAGLeg
 from core.training import TrainingLeg
@@ -33,7 +38,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("E2ESmoke")
 
 
-ROOT = Path(__file__).resolve().parent.parent
 SMOKE_DIR = ROOT / "training_data" / "smoke"
 SMOKE_CONFIG = ROOT / "configs" / "smoke_config.yaml"
 

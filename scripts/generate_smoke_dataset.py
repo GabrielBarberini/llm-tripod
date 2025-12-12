@@ -18,11 +18,16 @@ selection requires RAG context (not memorization).
 
 from __future__ import annotations
 
+import sys
 import argparse
 import json
 import random
 from pathlib import Path
 from typing import Dict, Tuple
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 STATUSES = ["stable", "warning", "critical"]
