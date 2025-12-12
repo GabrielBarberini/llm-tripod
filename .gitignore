@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Local artifacts
+training_data/smoke/
+training_data/smoke_run/
+training_data/vectordb/
+training_data/**/adapter/
+
+# OS / editor
+.DS_Store
+.vscode/

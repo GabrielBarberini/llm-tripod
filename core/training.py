@@ -1,5 +1,7 @@
+import json
 import logging
-from typing import Any
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from core.base import BaseLeg
 from core.config import TrainingConfig
@@ -21,18 +23,131 @@ class TrainingLeg(BaseLeg):
             logger.info("Training leg disabled. Skipping.")
             return
 
+        # Lazy imports: these are heavy and only needed on training nodes.
+        from datasets import load_dataset
+        import torch
+        from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            BitsAndBytesConfig,
+            DataCollatorForLanguageModeling,
+            Trainer,
+            TrainingArguments,
+        )
+
         logger.info("Starting training on base model: %s", self.config.base_model)
         logger.info("Dataset path: %s", self.config.dataset_path)
-        logger.info("LoRA config: %s", self.config.lora_config.dict())
         logger.info("Adapter output dir: %s", self.config.adapter_output_dir)
-        logger.info("Hyperparameters: %s", self.config.hyperparameters)
 
-        # --- PRODUCTION LOGIC PLACEHOLDER ---
-        # 1. Load/quantize the base model.
-        # 2. Stream or load the training dataset.
-        # 3. Apply LoRA/PEFT configuration.
-        # 4. Run trainer.train() with gradient accumulation.
-        # 5. Persist adapter weights to adapter_output_dir.
-        # ------------------------------------
+        hp = dict(self.config.hyperparameters or {})
+        output_dir = Path(self.config.adapter_output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Training complete. Adapter saved to %s", self.config.adapter_output_dir)
+        use_cuda = torch.cuda.is_available()
+        quant = str(hp.get("quantization", "4bit")).lower()
+        use_4bit = use_cuda and quant == "4bit"
+
+        bnb_config: Optional[BitsAndBytesConfig] = None
+        model_load_kwargs: Dict[str, Any] = {"low_cpu_mem_usage": True}
+        if use_4bit:
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+            )
+            model_load_kwargs.update({"quantization_config": bnb_config, "device_map": "auto"})
+            logger.info("Using QLoRA (4-bit NF4) on CUDA.")
+        else:
+            logger.info("Using full precision / non-4bit training (cuda=%s, quant=%s).", use_cuda, quant)
+
+        tokenizer = AutoTokenizer.from_pretrained(self.config.base_model, use_fast=True)
+        if tokenizer.pad_token_id is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        model = AutoModelForCausalLM.from_pretrained(
+            self.config.base_model,
+            torch_dtype=torch.float16 if use_cuda else torch.float32,
+            **model_load_kwargs,
+        )
+        model.config.pad_token_id = tokenizer.eos_token_id
+
+        if use_4bit:
+            model = prepare_model_for_kbit_training(model)
+
+        lora_cfg = LoraConfig(
+            r=int(self.config.lora_config.r),
+            lora_alpha=int(self.config.lora_config.alpha),
+            lora_dropout=float(self.config.lora_config.dropout),
+            target_modules=list(self.config.lora_config.target_modules),
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(model, lora_cfg)
+
+        dataset_path = self.config.dataset_path
+        ext = Path(dataset_path).suffix.lower()
+        ds_format = "json" if ext in {".json", ".jsonl"} else "text"
+        ds = load_dataset(ds_format, data_files={"train": dataset_path})["train"]
+
+        def to_text(row):
+            # Accept either {"text": "..."} or our smoke format:
+            # {"domain","device_profile","sensor_data","rag_context","expected":{...}}
+            if "text" in row:
+                return {"text": row["text"]}
+            expected = row.get("expected", {})
+            prompt = {
+                "domain": row.get("domain", "Thermal Control"),
+                "device_profile": row.get("device_profile", "eco"),
+                "sensor_data": row.get("sensor_data", {}),
+                "rag_context": row.get("rag_context", ""),
+            }
+            system = (
+                "You are a safety-first Industrial IoT controller.\n"
+                "Return ONLY valid JSON with keys: action, parameters, reasoning."
+            )
+            user = (
+                f"DEVICE_PROFILE: {prompt['device_profile']}\n"
+                f"HISTORY:\n{prompt['rag_context']}\n"
+                f"SENSOR:\n{json.dumps(prompt['sensor_data'])}\n"
+                "OUTPUT JSON:"
+            )
+            target = json.dumps(
+                {"action": expected.get("action"), "parameters": expected.get("parameters"), "reasoning": expected.get("reasoning")},
+                ensure_ascii=False,
+            )
+            return {"text": f"SYSTEM:\n{system}\n\nUSER:\n{user}\n{target}"}
+
+        ds = ds.map(to_text, remove_columns=ds.column_names)
+
+        max_len = int(hp.get("max_seq_length", 256))
+
+        def tokenize(batch):
+            tokens = tokenizer(batch["text"], truncation=True, padding="max_length", max_length=max_len)
+            tokens["labels"] = tokens["input_ids"].copy()
+            return tokens
+
+        ds = ds.map(tokenize, batched=True, remove_columns=["text"])
+
+        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+
+        args = TrainingArguments(
+            output_dir=str(output_dir),
+            per_device_train_batch_size=int(hp.get("micro_batch_size", 1)),
+            gradient_accumulation_steps=int(hp.get("gradient_accumulation_steps", 4)),
+            num_train_epochs=float(hp.get("num_epochs", 1)),
+            learning_rate=float(hp.get("learning_rate", 2e-4)),
+            logging_steps=int(hp.get("logging_steps", 10)),
+            save_strategy="no",
+            report_to="none",
+            bf16=bool(hp.get("bf16", True)) and use_cuda,
+            fp16=bool(hp.get("fp16", False)) and use_cuda,
+            gradient_checkpointing=True,
+        )
+
+        trainer = Trainer(model=model, args=args, train_dataset=ds, data_collator=data_collator)
+        trainer.train()
+        trainer.save_model(str(output_dir))
+        tokenizer.save_pretrained(str(output_dir))
+        logger.info("Training complete. Adapter saved to %s", output_dir)

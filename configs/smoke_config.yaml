@@ -1,0 +1,59 @@
+experiment_name: "smoke_e2e_v1"
+output_dir: "./training_data/smoke/out"
+
+training:
+  enabled: true
+  base_model: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+  dataset_path: "./training_data/smoke/train_text.jsonl"
+  adapter_output_dir: "./training_data/smoke/adapter"
+  lora_config:
+    r: 8
+    alpha: 16
+    dropout: 0.05
+    target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+  hyperparameters:
+    micro_batch_size: 2
+    gradient_accumulation_steps: 4
+    learning_rate: 2.0e-4
+    num_epochs: 1
+    quantization: "4bit"
+    max_seq_length: 256
+    logging_steps: 10
+    bf16: true
+
+rag:
+  enabled: true
+  vector_db_type: "local"
+  vector_db_path: "./training_data/smoke/vectordb"
+  collection_name: "smoke"
+  ingestion:
+    embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  retrieval:
+    strategy: "similarity"
+    top_k: 3
+
+prompting:
+  template_id: "smoke_json_controller_v1"
+  system_prompt: |
+    You are an expert Industrial IoT Controller for domain: {{ domain }}.
+    Use the provided HISTORY context (policies/heuristics) to choose the correct action.
+    Output ONLY valid JSON with keys: action, parameters, reasoning.
+  user_prompt_structure: |
+    ### HISTORY:
+    {{ rag_context }}
+
+    ### SENSOR:
+    {{ sensor_data }}
+
+    ### INSTRUCTION:
+    Use the policy numbers from HISTORY. Output JSON now.
+  few_shot:
+    enabled: false
+    source_file: ""
+    selection_strategy: "none"
+    count: 0
+
+evaluation:
+  test_set_path: "./training_data/smoke/test.jsonl"
+  metrics:
+    - "action_match_accuracy"
