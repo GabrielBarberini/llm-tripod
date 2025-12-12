@@ -1,0 +1,32 @@
+[
+  {
+    "text": "If temp >= 90C or status is critical, drop voltage by at least 0.2 and set fan to 90+.",
+    "metadata": {
+      "rule_id": 0
+    }
+  },
+  {
+    "text": "If vibration > 1.0 regardless of temp, schedule maintenance and reduce voltage slightly.",
+    "metadata": {
+      "rule_id": 1
+    }
+  },
+  {
+    "text": "If status is stable and temp < 70C, maintain settings and keep fan near 50-60.",
+    "metadata": {
+      "rule_id": 2
+    }
+  },
+  {
+    "text": "If status is warning and temp >= 80C, raise fan to 75-85 and reduce voltage 0.05-0.1.",
+    "metadata": {
+      "rule_id": 3
+    }
+  },
+  {
+    "text": "If vibration is between 0.5 and 1.0 with warning, set fan near 65-75 and plan maintenance.",
+    "metadata": {
+      "rule_id": 4
+    }
+  }
+]
