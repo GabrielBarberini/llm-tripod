@@ -25,6 +25,7 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
   ```
 - To use a different config file, pass `TripodOrchestrator('configs/your_config.yaml')`.
 - Smoke cross-section (downloads tiny HF models): `python scripts/smoke_cross_section.py`
+- Docker (optional): `docker build -t tripod .` then `docker run --rm --gpus all tripod python main.py`
 
 ## Coding Style & Naming Conventions
 - PEP 8 with type hints; config surfaces stay typed via Pydantic models.

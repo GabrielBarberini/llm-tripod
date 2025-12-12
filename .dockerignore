@@ -1,0 +1,13 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+.venv
+.vscode
+.DS_Store
+experiments
+models
+artifacts
+training_data
+runpod_endpoint
+temp

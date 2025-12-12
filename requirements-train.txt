@@ -1,0 +1,9 @@
+torch==2.3.1
+transformers==4.40.2
+datasets==2.20.0
+sentence-transformers==2.2.2
+accelerate==0.31.0
+bitsandbytes==0.43.1
+peft==0.11.1
+pyyaml
+pydantic==1.10.13
