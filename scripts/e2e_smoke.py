@@ -50,6 +50,16 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--n", type=int, default=2000, help="Total synthetic samples to generate")
     p.add_argument("--eval-samples", type=int, default=200, help="Max evaluation samples (0 = all)")
+    p.add_argument("--num-policies", type=int, default=50, help="Number of distinct policy docs")
+    p.add_argument("--train-policy-ratio", type=float, default=0.8, help="Fraction of policies used for training split")
+    p.add_argument(
+        "--holdout-policies",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="If enabled, test uses policy_ids not present in train (forces RAG).",
+    )
+    p.add_argument("--test-ratio", type=float, default=0.2, help="Fraction of generated samples used for test split")
+    p.add_argument("--seed", type=int, default=42)
     p.add_argument(
         "--report-dir",
         type=str,
@@ -283,6 +293,7 @@ def evaluate(
                 "sensor_data": {"policy_id": row["policy_id"], **row["sensor_data"]},
             }
         )
+        prompt = f"{prompt}\nASSISTANT:\n"
 
         inputs = tokenizer(prompt, return_tensors="pt")
         if torch.cuda.is_available():
@@ -371,7 +382,17 @@ def main():
     report: Dict[str, Any] = {
         "run_id": run_id,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "args": {"n": args.n, "eval_samples": args.eval_samples, "report_dir": str(report_dir), "save_predictions": bool(args.save_predictions)},
+        "args": {
+            "n": args.n,
+            "eval_samples": args.eval_samples,
+            "num_policies": args.num_policies,
+            "train_policy_ratio": args.train_policy_ratio,
+            "holdout_policies": bool(args.holdout_policies),
+            "test_ratio": args.test_ratio,
+            "seed": args.seed,
+            "report_dir": str(report_dir),
+            "save_predictions": bool(args.save_predictions),
+        },
         "git": _git_info(),
         "env": _env_info(),
         "paths": {},
@@ -391,6 +412,15 @@ def main():
             str(SMOKE_DIR),
             "--n",
             str(args.n),
+            "--num-policies",
+            str(args.num_policies),
+            "--train-policy-ratio",
+            str(args.train_policy_ratio),
+            "--test-ratio",
+            str(args.test_ratio),
+            "--seed",
+            str(args.seed),
+            "--holdout-policies" if args.holdout_policies else "--no-holdout-policies",
         ]
     )
 
@@ -449,7 +479,7 @@ def main():
             }
         )
         target = json.dumps(row["expected"], ensure_ascii=False)
-        train_text_rows.append({"text": f"{prompt}\n{target}"})
+        train_text_rows.append({"text": f"{prompt}\nASSISTANT:\n{target}"})
 
     train_text_path = SMOKE_DIR / "train_text.jsonl"
     write_jsonl(train_text_path, train_text_rows)

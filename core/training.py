@@ -31,9 +31,9 @@ class TrainingLeg(BaseLeg):
             AutoModelForCausalLM,
             AutoTokenizer,
             BitsAndBytesConfig,
-            DataCollatorForLanguageModeling,
             Trainer,
             TrainingArguments,
+            default_data_collator,
         )
 
         logger.info("Starting training on base model: %s", self.config.base_model)
@@ -122,15 +122,79 @@ class TrainingLeg(BaseLeg):
         ds = ds.map(to_text, remove_columns=ds.column_names)
 
         max_len = int(hp.get("max_seq_length", 256))
+        response_marker = str(hp.get("response_marker", "\nASSISTANT:\n"))
+        mask_prompt = bool(hp.get("mask_prompt", True))
+
+        bos_id = tokenizer.bos_token_id
+        eos_id = tokenizer.eos_token_id
+        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+
+        def _encode_one(text: str):
+            # Optional prompt/completion split for SFT-style training.
+            marker_idx = text.find(response_marker) if response_marker else -1
+            has_marker = marker_idx >= 0
+            do_mask = bool(mask_prompt and has_marker)
+            if has_marker:
+                prompt_part = text[: marker_idx + len(response_marker)]
+                completion_part = text[marker_idx + len(response_marker) :]
+            else:
+                prompt_part = ""
+                completion_part = text
+
+            prompt_ids = tokenizer(prompt_part, add_special_tokens=False).input_ids if prompt_part else []
+            completion_ids = tokenizer(completion_part, add_special_tokens=False).input_ids if completion_part else []
+
+            bos = [bos_id] if bos_id is not None else []
+            eos = [eos_id] if eos_id is not None else []
+
+            max_body = max_len - len(bos) - len(eos)
+            if max_body <= 0:
+                raise ValueError(f"max_seq_length too small (need > {len(bos) + len(eos)}).")
+
+            if len(completion_ids) > max_body:
+                # Keep the tail so the model still learns the end of the completion.
+                completion_ids = completion_ids[-max_body:]
+                prompt_ids = []
+            else:
+                remaining_prompt = max_body - len(completion_ids)
+                if len(prompt_ids) > remaining_prompt:
+                    prompt_ids = prompt_ids[-remaining_prompt:]
+
+            input_ids = bos + prompt_ids + completion_ids + eos
+            attention_mask = [1] * len(input_ids)
+
+            if do_mask:
+                labels = ([-100] * (len(bos) + len(prompt_ids))) + completion_ids + eos
+            else:
+                labels = input_ids.copy()
+
+            # Pad to max_len and ensure padding tokens do not contribute to loss.
+            pad_n = max_len - len(input_ids)
+            if pad_n > 0:
+                input_ids = input_ids + ([pad_id] * pad_n)
+                attention_mask = attention_mask + ([0] * pad_n)
+                labels = labels + ([-100] * pad_n)
+
+            return {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "labels": labels,
+            }
 
         def tokenize(batch):
-            tokens = tokenizer(batch["text"], truncation=True, padding="max_length", max_length=max_len)
-            tokens["labels"] = tokens["input_ids"].copy()
-            return tokens
+            input_ids = []
+            attention_mask = []
+            labels = []
+            for text in batch["text"]:
+                enc = _encode_one(text)
+                input_ids.append(enc["input_ids"])
+                attention_mask.append(enc["attention_mask"])
+                labels.append(enc["labels"])
+            return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
         ds = ds.map(tokenize, batched=True, remove_columns=["text"])
 
-        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+        data_collator = default_data_collator
 
         args = TrainingArguments(
             output_dir=str(output_dir),
@@ -144,6 +208,13 @@ class TrainingLeg(BaseLeg):
             bf16=bool(hp.get("bf16", True)) and use_cuda,
             fp16=bool(hp.get("fp16", False)) and use_cuda,
             gradient_checkpointing=True,
+            optim=(
+                "adamw_torch"
+                if not use_cuda
+                else str(hp.get("optim") or ("paged_adamw_8bit" if use_4bit else "adamw_torch"))
+            ),
+            lr_scheduler_type=str(hp.get("lr_scheduler_type", "cosine")),
+            warmup_ratio=float(hp.get("warmup_ratio", 0.03)),
         )
 
         trainer = Trainer(model=model, args=args, train_dataset=ds, data_collator=data_collator)

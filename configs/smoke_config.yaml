@@ -12,14 +12,22 @@ training:
     dropout: 0.05
     target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
   hyperparameters:
-    micro_batch_size: 2
-    gradient_accumulation_steps: 4
+    # SFT format: scripts/e2e_smoke.py appends `ASSISTANT:` before the JSON response.
+    response_marker: "\nASSISTANT:\n"
+    mask_prompt: true
+
+    # GPU-friendly defaults (RTX 2000 Ada 16GB): safe and reasonably fast.
+    micro_batch_size: 1
+    gradient_accumulation_steps: 8
     learning_rate: 2.0e-4
-    num_epochs: 1
+    num_epochs: 2
     quantization: "4bit"
-    max_seq_length: 256
+    max_seq_length: 512
     logging_steps: 10
     bf16: true
+    optim: "paged_adamw_8bit"
+    lr_scheduler_type: "cosine"
+    warmup_ratio: 0.03
 
 rag:
   enabled: true
@@ -38,6 +46,9 @@ prompting:
     You are an expert Industrial IoT Controller for domain: {{ domain }}.
     Use the provided HISTORY context (policies/heuristics) to choose the correct action.
     Output ONLY valid JSON with keys: action, parameters, reasoning.
+    Allowed actions: "maintain", "schedule_maintenance", "set_thermal_profile".
+    parameters MUST include both: fan_speed (int), voltage_bias (float).
+    Do NOT wrap JSON in markdown fences. Do NOT output extra keys.
   user_prompt_structure: |
     ### HISTORY:
     {{ rag_context }}
@@ -46,7 +57,9 @@ prompting:
     {{ sensor_data }}
 
     ### INSTRUCTION:
-    Use the policy numbers from HISTORY. Output JSON now.
+    Use the policy numbers from HISTORY when action is set_thermal_profile.
+    If vibration >= 1.0, prefer schedule_maintenance.
+    Output JSON now.
   few_shot:
     enabled: false
     source_file: ""

@@ -12,8 +12,8 @@ Each example contains:
 - expected: {action, parameters, reasoning}
 
 The key property: policy values (fan/voltage) live in RAG docs. Test samples
-use policy_ids that are not present in the training split, so correct parameter
-selection requires RAG context (not memorization).
+can optionally use policy_ids that are not present in the training split (policy
+holdout), so correct parameter selection requires RAG context (not memorization).
 """
 
 from __future__ import annotations
@@ -39,6 +39,12 @@ def parse_args():
     p.add_argument("--n", type=int, default=2000, help="Number of samples")
     p.add_argument("--num-policies", type=int, default=50, help="Number of distinct policy docs")
     p.add_argument("--train-policy-ratio", type=float, default=0.8, help="Fraction of policies used for training split")
+    p.add_argument(
+        "--holdout-policies",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="If enabled, test split uses policy_ids not present in train (forces RAG).",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--test-ratio", type=float, default=0.2)
     return p.parse_args()
@@ -131,9 +137,13 @@ def main():
     policy_ids = [p["policy_id"] for p in policies]
     rng.shuffle(policy_ids)
 
-    train_policy_count = max(1, int(len(policy_ids) * args.train_policy_ratio))
-    train_policy_ids = set(policy_ids[:train_policy_count])
-    test_policy_ids = set(policy_ids[train_policy_count:]) or set(policy_ids[:1])
+    if args.holdout_policies:
+        train_policy_count = max(1, int(len(policy_ids) * args.train_policy_ratio))
+        train_policy_ids = set(policy_ids[:train_policy_count])
+        test_policy_ids = set(policy_ids[train_policy_count:]) or set(policy_ids[:1])
+    else:
+        train_policy_ids = set(policy_ids)
+        test_policy_ids = set(policy_ids)
 
     rag_docs = []
     for p in policies:
@@ -208,7 +218,7 @@ def main():
     write_jsonl(out_dir / "test.jsonl", test)
     print(
         f"Wrote {len(train)} train and {len(test)} test samples to {out_dir} "
-        f"(train policies={len(train_policy_ids)}, test policies={len(test_policy_ids)})"
+        f"(train policies={len(train_policy_ids)}, test policies={len(test_policy_ids)}, holdout={args.holdout_policies})"
     )
 
 
