@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 
 # Local artifacts
+temp/
 training_data/smoke/
 training_data/smoke_run/
 training_data/vectordb/
