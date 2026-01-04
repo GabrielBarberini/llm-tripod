@@ -18,7 +18,6 @@ Use it to run repeatable end-to-end experiments and iterate on **data, retrieval
 - `scripts/`:
   - `scripts/e2e_smoke.py`: full integration test (dataset → RAG ingest → SFT training → eval → report).
   - `scripts/generate_smoke_dataset.py`: synthetic dataset + RAG doc generator (example task).
-- `training_data/`: local artifacts (ignored by git). Smoke reports land under `training_data/smoke/reports/`.
 
 ## Glossary (Key Terms)
 
