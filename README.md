@@ -24,52 +24,48 @@ Use it to run repeatable end-to-end experiments and iterate on **data, retrieval
 - **Base model**: the pretrained checkpoint (`training.base_model`), e.g. `TinyLlama/TinyLlama-1.1B-Chat-v1.0`.
 - **Adapter**: LoRA/QLoRA weights saved to `training.adapter_output_dir`.
 - **Tuned model**: base model + adapter loaded together (via `peft.PeftModel`).
+- **SFT**: supervised fine-tuning; in this repo it refers to building prompt + target training text before adapter training.
 - **RAG context**: retrieved text inserted into the prompt (domain rules, docs, examples, guidelines).
 - **With RAG / without RAG**: ablation toggle that either injects retrieved context into the prompt or leaves it empty (applied at inference/eval time via `rag.inference.enabled`; training can still be RAG-enriched via `rag.training.enabled`).
 - **Holdout IDs / `--holdout-policies`**: example smoke-dataset setting where evaluation uses document IDs that never appear in training (forces generalization via retrieval instead of memorization). In your domain, “IDs” could be SKUs, policy numbers, error codes, etc.
-- **Evaluation passes**:
-  - `base_with_rag`, `base_without_rag`, `tuned_with_rag`, `tuned_without_rag`
-- **Metrics** (from `scripts/e2e_smoke.py`):
-  - `action_acc`: exact match on the parsed `action` field.
-  - `param_acc`: schema-specific parameter match (exactness/tolerance rules live in the evaluator).
-  - Task-specific subset metrics are encouraged (example: “param_acc on only the ‘set profile’ action”).
+- **Metrics**: task-specific evaluation signals defined by your evaluation script; see `scripts/README.md` for the smoke-test metrics.
 
 Important: with **holdout enabled**, “without RAG” metrics can be low by design (the prompt may not contain the missing information).
 
 ## Flow of Information (When Legs Run)
 
-### Inference (runtime on device)
-
-```mermaid
-flowchart LR
-  Input[Input payload] --> RAG[RAGLeg (rag.inference): retrieve context]
-  RAG --> Prompt[PromptLeg: build prompt]
-  Prompt --> LLM["LLM inference engine<br/>(pluggable)"]
-  LLM --> Output["Structured output<br/>(JSON, function-call, etc)"]
-```
-
-- Runs **sequentially**: RAG → Prompt → LLM.
-- In `main.py`, the “LLM inference engine” is a placeholder that prints the prompt for inspection.
-
 ### Training (offline on GPU node)
 
 ```mermaid
 flowchart TD
-  Data[Train examples] --> RAG2[RAGLeg (rag.training): enrich each example]
-  RAG2 --> SFT["Build SFT text:<br/>PROMPT + ASSISTANT + TARGET"]
-  SFT --> Train[TrainingLeg: LoRA/QLoRA]
+  Data[Train examples] --> RAG2[RAGLeg training]
+  RAG2 --> SFT[Build SFT text]
+  SFT --> Train[TrainingLeg LoRA/QLoRA]
   Train --> Adapter[Adapter dir]
 ```
 
 - Runs **in phases**: ingest → build training file → train. It’s not interleaved with inference.
 - The smoke test uses a response delimiter `ASSISTANT:` and masks the prompt tokens during training (completion-style SFT).
+- The SFT text combines prompt and target (`PROMPT + ASSISTANT + TARGET`).
 - In the smoke pipeline (`scripts/e2e_smoke.py`), RAG enrichment happens when building the training file; if `rag.training.enabled` is false or ingestion is skipped, training examples get empty context.
+
+### Inference (runtime on device)
+
+```mermaid
+flowchart LR
+  Input[Input payload] --> RAG[RAGLeg inference]
+  RAG --> Prompt[PromptLeg raw or dspy]
+  Prompt --> LLM[LLM inference engine]
+  LLM --> Output[Structured output]
+```
+
+- Runs **sequentially**: RAG → Prompt → LLM.
+- In `main.py`, the “LLM inference engine” is a placeholder that prints the prompt for inspection.
 
 ### Evaluation (smoke test)
 
-- Runs **four sequential loops** over the eval split:
-  - base/tuned × with/without RAG.
-- Reports are persisted so you can disconnect SSH and inspect later.
+- Runs **sequential loops** over the eval split.
+- Pass naming and metrics are defined by the evaluation script (see `scripts/README.md` for smoke-test details).
 - The "with_rag" passes inject retrieved context at prompt time (uses `rag.inference`); the "without_rag" passes force empty context regardless of how the training data was built.
 
 For more detail on flows and feature flags, see `FLOW_OF_INFORMATION.md`.
@@ -133,8 +129,8 @@ Useful flags:
 Note: `--num-policies`/`--holdout-policies` apply to the **bundled smoke dataset generator**. For your own task, create a generator script (or point to your dataset) and adjust parsing/eval accordingly (see below).
 
 After a run, inspect:
-- `training_data/smoke/reports/<run_id>/summary.md` (human-readable)
-- `training_data/smoke/reports/<run_id>/summary.json` (machine-readable)
+- `training_data/smoke/reports/<run_id>/summary.md` (Markdown summary)
+- `training_data/smoke/reports/<run_id>/summary.json` (JSON summary)
 - `training_data/smoke/reports/<run_id>/run.log` (full logs)
 - `training_data/smoke/reports/<run_id>/predictions/*.jsonl` (prompt, retrieved context, outputs)
 
@@ -156,6 +152,7 @@ Tripod is configured via YAML under `configs/`. The key knobs:
   - `mask_prompt`: if true, only the completion contributes to loss
 - `rag.training.enabled` / `rag.inference.enabled`: toggle retrieval for training data enrichment vs inference-time prompts
 - `rag.training.retrieval.top_k` / `rag.inference.retrieval.top_k`: how many docs to retrieve per phase
+- `rag.*.retrieval.score_threshold`: retrieval score floor (not wired in `core/rag.py` yet)
 - `prompting.system_prompt` + `prompting.user_prompt_structure`: output schema and instructions
 - `prompting.backend`: `raw` (template rendering) or `dspy` (DSPy program)
 - `prompting.dspy`: DSPy-specific knobs like `instructions`, `chain_of_thought`, and `output_field`
@@ -184,16 +181,13 @@ The default generator (`scripts/generate_smoke_dataset.py`) is IoT-themed (“Th
 
 Where to look when something is off:
 
-- **RAG quality**
-  - Logs: `core.rag` (“Retrieving top k…”)
-  - Artifacts: vector store at `rag.inference.vector_db_path` (`docs.jsonl`, `embeddings.npy`) and optionally `rag.training.vector_db_path`
-  - Smoke: check `predictions/*.jsonl` → `rag_context` for wrong/missing retrieval.
-- **Prompting quality**
-  - Logs: `core.prompting` (“Constructing prompt…”)
-  - Smoke: check `predictions/*.jsonl` → `prompt` for schema drift or bad formatting.
 - **Training quality**
   - Logs: `core.training` + Trainer loss lines in `run.log`
   - If outputs stop being JSON, first verify the SFT delimiter (`ASSISTANT:`) is present in both training data and eval prompts.
+- **Inference prompt quality**
+  - Logs: `core.rag` (“Retrieving top k…”) + `core.prompting` (“Constructing prompt…”)
+  - Artifacts: vector store at `rag.inference.vector_db_path` (`docs.jsonl`, `embeddings.npy`) and optionally `rag.training.vector_db_path`
+  - Smoke: check `predictions/*.jsonl` → `rag_context` and `prompt` for retrieval gaps or schema drift.
 - **Evaluation quality**
   - `summary.json` contains all run args (including holdout settings) and per-pass metrics.
 

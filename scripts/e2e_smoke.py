@@ -290,15 +290,15 @@ def _write_markdown(path: Path, report: dict[str, Any]):
     lines.append("## Metrics")
     lines.append("")
     lines.append(
-        "| Pass | action_acc | param_acc | thermal_param_acc | samples | duration_s |"
+        "| Pass | action_accuracy | param_accuracy | thermal_param_accuracy | samples | duration_s |"
     )
     lines.append(
-        "|------|------------|-----------|------------------|---------|------------|"
+        "|------|------------------|----------------|------------------------|---------|------------|"
     )
 
     def _row(pass_name: str, m: dict[str, Any]) -> str:
         return (
-            f"| `{pass_name}` | {_fmt(m.get('action_acc'))} | {_fmt(m.get('param_acc'))} | {_fmt(m.get('thermal_param_acc'))} |"
+            f"| `{pass_name}` | {_fmt(m.get('action_accuracy'))} | {_fmt(m.get('param_accuracy'))} | {_fmt(m.get('thermal_param_accuracy'))} |"
             f" {_fmt(m.get('samples'))} | {_fmt(m.get('duration_s'))} |"
         )
 
@@ -468,9 +468,9 @@ def evaluate(
     duration_s = time.time() - start_s
     n = max(1, len(test_rows))
     return {
-        "action_acc": action_hits / n,
-        "param_acc": param_hits / n,
-        "thermal_param_acc": thermal_param_hits / max(1, thermal_total),
+        "action_accuracy": action_hits / n,
+        "param_accuracy": param_hits / n,
+        "thermal_param_accuracy": thermal_param_hits / max(1, thermal_total),
         "samples": len(test_rows),
         "duration_s": duration_s,
     }
@@ -704,38 +704,38 @@ def main():
 
     logger.info(
         "Base  +RAG: action=%.3f param=%.3f thermal_param=%.3f",
-        base_with["action_acc"],
-        base_with["param_acc"],
-        base_with["thermal_param_acc"],
+        base_with["action_accuracy"],
+        base_with["param_accuracy"],
+        base_with["thermal_param_accuracy"],
     )
     logger.info(
         "Base  -RAG: action=%.3f param=%.3f thermal_param=%.3f",
-        base_without["action_acc"],
-        base_without["param_acc"],
-        base_without["thermal_param_acc"],
+        base_without["action_accuracy"],
+        base_without["param_accuracy"],
+        base_without["thermal_param_accuracy"],
     )
     logger.info(
         "Tuned +RAG: action=%.3f param=%.3f thermal_param=%.3f",
-        tuned_with["action_acc"],
-        tuned_with["param_acc"],
-        tuned_with["thermal_param_acc"],
+        tuned_with["action_accuracy"],
+        tuned_with["param_accuracy"],
+        tuned_with["thermal_param_accuracy"],
     )
     logger.info(
         "Tuned -RAG: action=%.3f param=%.3f thermal_param=%.3f",
-        tuned_without["action_acc"],
-        tuned_without["param_acc"],
-        tuned_without["thermal_param_acc"],
+        tuned_without["action_accuracy"],
+        tuned_without["param_accuracy"],
+        tuned_without["thermal_param_accuracy"],
     )
 
     report["deltas"] = {
-        "rag_lift_base_param_acc": base_with["param_acc"]
-        - base_without["param_acc"],
-        "rag_lift_tuned_param_acc": tuned_with["param_acc"]
-        - tuned_without["param_acc"],
-        "tune_gain_with_rag_param_acc": tuned_with["param_acc"]
-        - base_with["param_acc"],
-        "tune_gain_without_rag_param_acc": tuned_without["param_acc"]
-        - base_without["param_acc"],
+        "rag_lift_base_param_accuracy": base_with["param_accuracy"]
+        - base_without["param_accuracy"],
+        "rag_lift_tuned_param_accuracy": tuned_with["param_accuracy"]
+        - tuned_without["param_accuracy"],
+        "tune_gain_with_rag_param_accuracy": tuned_with["param_accuracy"]
+        - base_with["param_accuracy"],
+        "tune_gain_without_rag_param_accuracy": tuned_without["param_accuracy"]
+        - base_without["param_accuracy"],
     }
     _write_json(report_dir / "summary.json", report)
     _write_markdown(report_dir / "summary.md", report)
