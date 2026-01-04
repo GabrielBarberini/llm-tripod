@@ -33,34 +33,63 @@ training:
     logging_steps: 10
 
 # ------------------------------------------------------------------------------
-# LEG 2: RAG MANAGEMENT (Context Window)
+# LEG 2: RAG MANAGEMENT (Training + Inference)
 # ------------------------------------------------------------------------------
 rag:
-  enabled: true
-  vector_db_type: "chromadb" # chromadb, pinecone, faiss
-  vector_db_path: "./training_data/vectordb"
-  collection_name: "iot_history_logs"
+  # Configure training vs inference independently; use the same store if desired.
+  training:
+    enabled: true
+    vector_db_type: "chromadb" # chromadb, pinecone, faiss
+    vector_db_path: "./training_data/vectordb"
+    collection_name: "iot_history_logs"
 
-  # Ingestion Config
-  ingestion:
-    chunk_size: 512
-    chunk_overlap: 50
-    embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+    # Ingestion Config
+    ingestion:
+      chunk_size: 512
+      chunk_overlap: 50
+      embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
 
-  # Retrieval Config (The knobs you tweak)
-  retrieval:
-    strategy: "similarity" # similarity, mmr, hybrid
-    top_k: 5
-    score_threshold: 0.75
-    reranking:
-      enabled: false
-      model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # Retrieval Config (The knobs you tweak)
+    retrieval:
+      strategy: "similarity" # similarity, mmr, hybrid
+      top_k: 5
+      score_threshold: 0.75
+      reranking:
+        enabled: false
+        model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+  inference:
+    enabled: true
+    vector_db_type: "chromadb" # chromadb, pinecone, faiss
+    vector_db_path: "./training_data/vectordb"
+    collection_name: "iot_history_logs"
+
+    # Ingestion Config
+    ingestion:
+      chunk_size: 512
+      chunk_overlap: 50
+      embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+
+    # Retrieval Config (The knobs you tweak)
+    retrieval:
+      strategy: "similarity" # similarity, mmr, hybrid
+      top_k: 5
+      score_threshold: 0.75
+      reranking:
+        enabled: false
+        model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 # ------------------------------------------------------------------------------
 # LEG 3: PROMPT ENGINEERING (Instructions)
 # ------------------------------------------------------------------------------
 prompting:
   template_id: "cot_engineering_v2"
+  backend: "dspy"
+  dspy:
+    include_user_prompt: true
+    chain_of_thought: false
+    output_field: "response"
+    output_desc: "JSON output matching the schema."
 
   # Dynamic Template using Jinja2 syntax
   system_prompt: |

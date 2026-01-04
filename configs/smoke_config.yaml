@@ -30,18 +30,31 @@ training:
     warmup_ratio: 0.03
 
 rag:
-  enabled: true
-  vector_db_type: "local"
-  vector_db_path: "./training_data/smoke/vectordb"
-  collection_name: "smoke"
-  ingestion:
-    embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
-  retrieval:
-    strategy: "similarity"
-    top_k: 3
+  # Configure training vs inference independently; use the same store if desired.
+  training:
+    enabled: true
+    vector_db_type: "local"
+    vector_db_path: "./training_data/smoke/vectordb"
+    collection_name: "smoke"
+    ingestion:
+      embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+    retrieval:
+      strategy: "similarity"
+      top_k: 3
+  inference:
+    enabled: true
+    vector_db_type: "local"
+    vector_db_path: "./training_data/smoke/vectordb"
+    collection_name: "smoke"
+    ingestion:
+      embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+    retrieval:
+      strategy: "similarity"
+      top_k: 3
 
 prompting:
   template_id: "smoke_json_controller_v1"
+  backend: "raw"
   system_prompt: |
     You are an expert Industrial IoT Controller for domain: {{ domain }}.
     Use the provided HISTORY context (policies/heuristics) to choose the correct action.

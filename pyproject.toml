@@ -1,0 +1,18 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+
+[tool.black]
+line-length = 79
+include = '\.py$'
+skip-string-normalization = true
+
+[tool.ruff]
+line-length = 79
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "N", "Q"]
+ignore = ["N815", "E501", "Q000", "E402", "N802"]
+fixable = ["F401"]

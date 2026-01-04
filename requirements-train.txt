@@ -6,5 +6,6 @@ accelerate==0.31.0
 bitsandbytes==0.43.1
 peft==0.11.1
 pyyaml
-pydantic==1.10.13
+pydantic>=2.6.0
 huggingface_hub==0.23.4
+dspy-ai

@@ -6,9 +6,9 @@ Designed to run on a GPU training node (e.g., RunPod).
 Flow:
 1) Generate synthetic dataset + RAG docs.
 2) Ingest RAG docs into local vector store.
-3) Build a training file that includes retrieved RAG context for each example.
+3) Build a training file with retrieved RAG context when rag.training.enabled is true.
 4) Train a LoRA adapter on TinyLlama (4-bit if CUDA).
-5) Evaluate on the held-out set with two modes:
+5) Evaluate on the held-out set with two modes (rag.inference on/off):
    - with RAG context in the prompt
    - without RAG context (ablation)
 """
@@ -23,7 +23,7 @@ import platform
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import yaml
 
@@ -37,7 +37,10 @@ from core.prompting import PromptLeg
 from core.config import TripodConfig
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger("E2ESmoke")
 
 
@@ -48,17 +51,42 @@ DEFAULT_REPORTS_DIR = SMOKE_DIR / "reports"
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--n", type=int, default=2000, help="Total synthetic samples to generate")
-    p.add_argument("--eval-samples", type=int, default=200, help="Max evaluation samples (0 = all)")
-    p.add_argument("--num-policies", type=int, default=50, help="Number of distinct policy docs")
-    p.add_argument("--train-policy-ratio", type=float, default=0.8, help="Fraction of policies used for training split")
+    p.add_argument(
+        "--n",
+        type=int,
+        default=2000,
+        help="Total synthetic samples to generate",
+    )
+    p.add_argument(
+        "--eval-samples",
+        type=int,
+        default=200,
+        help="Max evaluation samples (0 = all)",
+    )
+    p.add_argument(
+        "--num-policies",
+        type=int,
+        default=50,
+        help="Number of distinct policy docs",
+    )
+    p.add_argument(
+        "--train-policy-ratio",
+        type=float,
+        default=0.8,
+        help="Fraction of policies used for training split",
+    )
     p.add_argument(
         "--holdout-policies",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="If enabled, test uses policy_ids not present in train (forces RAG).",
     )
-    p.add_argument("--test-ratio", type=float, default=0.2, help="Fraction of generated samples used for test split")
+    p.add_argument(
+        "--test-ratio",
+        type=float,
+        default=0.2,
+        help="Fraction of generated samples used for test split",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument(
         "--report-dir",
@@ -75,46 +103,67 @@ def parse_args():
     return p.parse_args()
 
 
-def read_jsonl(path: Path) -> List[Dict[str, Any]]:
-    rows = []
-    with path.open("r") as f:
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as f:
         for line in f:
             rows.append(json.loads(line))
     return rows
 
 
-def write_jsonl(path: Path, rows: List[Dict[str, Any]]):
+def write_jsonl(path: Path, rows: list[dict[str, Any]]):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")
 
 
-def build_query(example: Dict[str, Any]) -> str:
+def build_query(example: dict[str, Any]) -> str:
     s = example["sensor_data"]
     return f"policy_id={example['policy_id']} temp={s['temp']} vib={s['vibration']} status={s['status']}"
 
 
-def parse_action(generated: str) -> Tuple[str, Dict[str, Any]]:
+def parse_action(generated: str) -> tuple[str, dict[str, Any]]:
     # Try to parse JSON in the output; fall back to empty.
     try:
         start = generated.find("{")
         end = generated.rfind("}")
         if start >= 0 and end > start:
             obj = json.loads(generated[start : end + 1])
-            return str(obj.get("action", "")), obj.get("parameters", {}) or {}
+            match obj:
+                case {"action": action, "parameters": params}:
+                    return str(action), params or {}
+                case {"action": action}:
+                    return str(action), {}
     except Exception:
         pass
     return "", {}
 
 
-def _build_rag_context(rag: RAGLeg, row: Dict[str, Any]) -> str:
-    policy_ctx = rag.run(query=build_query(row), filters={"policy_id": row["policy_id"]})
+def _build_rag_context(rag: RAGLeg, row: dict[str, Any]) -> str:
+    policy_ctx = rag.run(
+        query=build_query(row), filters={"policy_id": row["policy_id"]}
+    )
     heur_ctx = rag.run(query=build_query(row), filters={"type": "heuristic"})
     return "\n".join([c for c in [policy_ctx, heur_ctx] if c]).strip()
 
 
-def _num(x: Any) -> Optional[float]:
+def _ingest_rag_docs(rags: list[RAGLeg], docs: list[dict[str, Any]]) -> None:
+    seen_paths: set[str] = set()
+    for rag in rags:
+        match rag.config.enabled:
+            case False:
+                continue
+            case True:
+                pass
+        path = str(rag.config.vector_db_path)
+        if path in seen_paths:
+            continue
+        rag.ingest(docs)
+        seen_paths.add(path)
+
+
+def _num(x: Any) -> float | None:
     try:
         return float(x)
     except Exception:
@@ -130,12 +179,16 @@ def _setup_report_logging(report_dir: Path) -> Path:
     log_path = report_dir / "run.log"
     handler = logging.FileHandler(log_path, encoding="utf-8")
     handler.setLevel(logging.INFO)
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+    )
     logging.getLogger().addHandler(handler)
     return log_path
 
 
-def _safe_version(pkg: str) -> Optional[str]:
+def _safe_version(pkg: str) -> str | None:
     try:
         import importlib.metadata as importlib_metadata
 
@@ -144,30 +197,46 @@ def _safe_version(pkg: str) -> Optional[str]:
         return None
 
 
-def _git_info() -> Dict[str, Any]:
+def _git_info() -> dict[str, Any]:
     import subprocess
 
-    info: Dict[str, Any] = {}
+    info: dict[str, Any] = {}
     try:
-        info["commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT).decode().strip()
+        info["commit"] = (
+            subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT)
+            .decode()
+            .strip()
+        )
     except Exception:
         info["commit"] = None
     try:
-        out = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT).decode().strip()
+        out = (
+            subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)
+            .decode()
+            .strip()
+        )
         info["dirty"] = bool(out)
     except Exception:
         info["dirty"] = None
     return info
 
 
-def _env_info() -> Dict[str, Any]:
-    info: Dict[str, Any] = {
+def _env_info() -> dict[str, Any]:
+    info: dict[str, Any] = {
         "python": sys.version.replace("\n", " "),
         "platform": platform.platform(),
     }
 
     # Package versions (best-effort)
-    for pkg in ["torch", "transformers", "datasets", "accelerate", "peft", "bitsandbytes", "sentence-transformers"]:
+    for pkg in [
+        "torch",
+        "transformers",
+        "datasets",
+        "accelerate",
+        "peft",
+        "bitsandbytes",
+        "sentence-transformers",
+    ]:
         info[pkg] = _safe_version(pkg)
 
     # CUDA/GPU details (best-effort)
@@ -185,39 +254,60 @@ def _env_info() -> Dict[str, Any]:
     return info
 
 
-def _write_json(path: Path, payload: Dict[str, Any]):
+def _write_json(path: Path, payload: dict[str, Any]):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
     tmp.replace(path)
 
 
-def _write_markdown(path: Path, report: Dict[str, Any]):
+def _write_markdown(path: Path, report: dict[str, Any]):
     def _fmt(x: Any) -> str:
         if isinstance(x, float):
             return f"{x:.3f}"
         return str(x)
 
     metrics = report.get("metrics", {})
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append(f"# Tripod E2E Smoke Report ({report.get('run_id')})")
     lines.append("")
     lines.append(f"- Timestamp (UTC): `{report.get('timestamp_utc')}`")
-    lines.append(f"- Git commit: `{report.get('git', {}).get('commit')}` (dirty={report.get('git', {}).get('dirty')})")
-    lines.append(f"- Args: `--n {report.get('args', {}).get('n')} --eval-samples {report.get('args', {}).get('eval_samples')}`")
+    lines.append(
+        f"- Git commit: `{report.get('git', {}).get('commit')}` (dirty={report.get('git', {}).get('dirty')})"
+    )
+    lines.append(
+        f"- Args: `--n {report.get('args', {}).get('n')} --eval-samples {report.get('args', {}).get('eval_samples')}`"
+    )
+    lines.append(
+        f"- RAG training enabled: `{report.get('rag', {}).get('training_enabled')}`"
+    )
+    lines.append(
+        f"- RAG inference enabled: `{report.get('rag', {}).get('inference_enabled')}`"
+    )
     lines.append("")
     lines.append("## Metrics")
     lines.append("")
-    lines.append("| Pass | action_acc | param_acc | thermal_param_acc | samples | duration_s |")
-    lines.append("|------|------------|-----------|------------------|---------|------------|")
+    lines.append(
+        "| Pass | action_acc | param_acc | thermal_param_acc | samples | duration_s |"
+    )
+    lines.append(
+        "|------|------------|-----------|------------------|---------|------------|"
+    )
 
-    def _row(pass_name: str, m: Dict[str, Any]) -> str:
+    def _row(pass_name: str, m: dict[str, Any]) -> str:
         return (
             f"| `{pass_name}` | {_fmt(m.get('action_acc'))} | {_fmt(m.get('param_acc'))} | {_fmt(m.get('thermal_param_acc'))} |"
             f" {_fmt(m.get('samples'))} | {_fmt(m.get('duration_s'))} |"
         )
 
-    for key in ["base_with_rag", "base_without_rag", "tuned_with_rag", "tuned_without_rag"]:
+    for key in [
+        "base_with_rag",
+        "base_without_rag",
+        "tuned_with_rag",
+        "tuned_without_rag",
+    ]:
         if key in metrics:
             lines.append(_row(key, metrics[key]))
 
@@ -232,7 +322,7 @@ def _write_markdown(path: Path, report: Dict[str, Any]):
     path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
-def load_llm(model_id: str, adapter_dir: Optional[Path]):
+def load_llm(model_id: str, adapter_dir: Path | None):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -242,7 +332,9 @@ def load_llm(model_id: str, adapter_dir: Optional[Path]):
 
     base = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        torch_dtype=(
+            torch.float16 if torch.cuda.is_available() else torch.float32
+        ),
         low_cpu_mem_usage=True,
         device_map="auto" if torch.cuda.is_available() else None,
     )
@@ -261,12 +353,12 @@ def evaluate(
     tokenizer,
     prompter: PromptLeg,
     rag: RAGLeg,
-    test_rows: List[Dict[str, Any]],
+    test_rows: list[dict[str, Any]],
     use_rag: bool,
     max_samples: int = 0,
-    predictions_path: Optional[Path] = None,
+    predictions_path: Path | None = None,
     pass_name: str = "",
-) -> Dict[str, float]:
+) -> dict[str, float | int]:
     import torch
 
     if max_samples and max_samples > 0:
@@ -286,11 +378,14 @@ def evaluate(
     for row in test_rows:
         rag_context = _build_rag_context(rag, row) if use_rag else ""
 
-        prompt = prompter.run(
+        prompt = prompter.render_prompt(
             {
                 "domain": row["domain"],
                 "rag_context": rag_context,
-                "sensor_data": {"policy_id": row["policy_id"], **row["sensor_data"]},
+                "sensor_data": {
+                    "policy_id": row["policy_id"],
+                    **row["sensor_data"],
+                },
             }
         )
         prompt = f"{prompt}\nASSISTANT:\n"
@@ -306,7 +401,9 @@ def evaluate(
             repetition_penalty=1.1,
             pad_token_id=tokenizer.eos_token_id,
         )
-        gen = tokenizer.decode(out[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True).strip()
+        gen = tokenizer.decode(
+            out[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
+        ).strip()
         action, params = parse_action(gen)
 
         expected = row["expected"]
@@ -324,7 +421,12 @@ def evaluate(
             vb_pred = _num(params.get("voltage_bias"))
             fan_exp = _num(expected_params.get("fan_speed"))
             vb_exp = _num(expected_params.get("voltage_bias"))
-            if fan_pred is not None and vb_pred is not None and fan_exp is not None and vb_exp is not None:
+            if (
+                fan_pred is not None
+                and vb_pred is not None
+                and fan_exp is not None
+                and vb_exp is not None
+            ):
                 fan_ok = int(round(fan_pred)) == int(round(fan_exp))
                 vb_ok = abs(vb_pred - vb_exp) <= 0.02
                 params_ok = fan_ok and vb_ok
@@ -350,7 +452,10 @@ def evaluate(
                         "expected": expected,
                         "generated": gen,
                         "parsed": {"action": action, "parameters": params},
-                        "match": {"action_ok": action_ok, "params_ok": params_ok},
+                        "match": {
+                            "action_ok": action_ok,
+                            "params_ok": params_ok,
+                        },
                     },
                     ensure_ascii=False,
                 )
@@ -374,12 +479,16 @@ def evaluate(
 def main():
     args = parse_args()
     run_id = _utc_timestamp()
-    report_dir = Path(args.report_dir).expanduser() if args.report_dir else (DEFAULT_REPORTS_DIR / run_id)
+    report_dir = (
+        Path(args.report_dir).expanduser()
+        if args.report_dir
+        else (DEFAULT_REPORTS_DIR / run_id)
+    )
     log_path = _setup_report_logging(report_dir)
     logger.info("Report directory: %s", report_dir)
     logger.info("Report log: %s", log_path)
 
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "run_id": run_id,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "args": {
@@ -420,7 +529,11 @@ def main():
             str(args.test_ratio),
             "--seed",
             str(args.seed),
-            "--holdout-policies" if args.holdout_policies else "--no-holdout-policies",
+            (
+                "--holdout-policies"
+                if args.holdout_policies
+                else "--no-holdout-policies"
+            ),
         ]
     )
 
@@ -446,23 +559,36 @@ def main():
     # 2) Load config and init legs
     if not SMOKE_CONFIG.exists():
         raise FileNotFoundError(f"Missing config at {SMOKE_CONFIG}")
-    raw_cfg = yaml.safe_load(SMOKE_CONFIG.read_text())
-    cfg = TripodConfig(**raw_cfg)
-    (report_dir / "config_snapshot.yaml").write_text(SMOKE_CONFIG.read_text(), encoding="utf-8")
-    rag = RAGLeg(cfg.rag)
+    raw_cfg = yaml.safe_load(SMOKE_CONFIG.read_text(encoding="utf-8"))
+    match raw_cfg:
+        case dict() as payload:
+            cfg = TripodConfig.model_validate(payload)
+        case _:
+            raise ValueError("Smoke config root must be a mapping.")
+    (report_dir / "config_snapshot.yaml").write_text(
+        SMOKE_CONFIG.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    rag_training = RAGLeg(cfg.rag.training)
+    rag_inference = RAGLeg(cfg.rag.inference)
     prompter = PromptLeg(cfg.prompting)
     trainer = TrainingLeg(cfg.training)
     report["paths"].update(
         {
-            "vectordb_path": str(cfg.rag.vector_db_path),
+            "training_vectordb_path": str(cfg.rag.training.vector_db_path),
+            "inference_vectordb_path": str(cfg.rag.inference.vector_db_path),
             "adapter_output_dir": str(cfg.training.adapter_output_dir),
             "base_model": str(cfg.training.base_model),
         }
     )
+    report["rag"] = {
+        "training_enabled": bool(cfg.rag.training.enabled),
+        "inference_enabled": bool(cfg.rag.inference.enabled),
+    }
     _write_json(report_dir / "summary.json", report)
 
     # 3) Ingest RAG docs
-    rag.ingest(docs_for_ingest)
+    _ingest_rag_docs([rag_training, rag_inference], docs_for_ingest)
 
     # 4) Build a training file (prompt + target) with per-example retrieved context
     train_rows = read_jsonl(SMOKE_DIR / "train.jsonl")
@@ -470,12 +596,15 @@ def main():
 
     train_text_rows = []
     for row in train_rows:
-        ctx = _build_rag_context(rag, row)
-        prompt = prompter.run(
+        ctx = _build_rag_context(rag_training, row)
+        prompt = prompter.render_prompt(
             {
                 "domain": row["domain"],
                 "rag_context": ctx,
-                "sensor_data": {"policy_id": row["policy_id"], **row["sensor_data"]},
+                "sensor_data": {
+                    "policy_id": row["policy_id"],
+                    **row["sensor_data"],
+                },
             }
         )
         target = json.dumps(row["expected"], ensure_ascii=False)
@@ -505,11 +634,15 @@ def main():
         base_model,
         base_tok,
         prompter,
-        rag,
+        rag_inference,
         test_rows,
         use_rag=True,
         max_samples=args.eval_samples,
-        predictions_path=(preds_dir / "base_with_rag.jsonl") if args.save_predictions else None,
+        predictions_path=(
+            (preds_dir / "base_with_rag.jsonl")
+            if args.save_predictions
+            else None
+        ),
         pass_name="base_with_rag",
     )
     report["metrics"]["base_with_rag"] = base_with
@@ -519,11 +652,15 @@ def main():
         base_model,
         base_tok,
         prompter,
-        rag,
+        rag_inference,
         test_rows,
         use_rag=False,
         max_samples=args.eval_samples,
-        predictions_path=(preds_dir / "base_without_rag.jsonl") if args.save_predictions else None,
+        predictions_path=(
+            (preds_dir / "base_without_rag.jsonl")
+            if args.save_predictions
+            else None
+        ),
         pass_name="base_without_rag",
     )
     report["metrics"]["base_without_rag"] = base_without
@@ -533,11 +670,15 @@ def main():
         tuned_model,
         tuned_tok,
         prompter,
-        rag,
+        rag_inference,
         test_rows,
         use_rag=True,
         max_samples=args.eval_samples,
-        predictions_path=(preds_dir / "tuned_with_rag.jsonl") if args.save_predictions else None,
+        predictions_path=(
+            (preds_dir / "tuned_with_rag.jsonl")
+            if args.save_predictions
+            else None
+        ),
         pass_name="tuned_with_rag",
     )
     report["metrics"]["tuned_with_rag"] = tuned_with
@@ -547,26 +688,54 @@ def main():
         tuned_model,
         tuned_tok,
         prompter,
-        rag,
+        rag_inference,
         test_rows,
         use_rag=False,
         max_samples=args.eval_samples,
-        predictions_path=(preds_dir / "tuned_without_rag.jsonl") if args.save_predictions else None,
+        predictions_path=(
+            (preds_dir / "tuned_without_rag.jsonl")
+            if args.save_predictions
+            else None
+        ),
         pass_name="tuned_without_rag",
     )
     report["metrics"]["tuned_without_rag"] = tuned_without
     _write_json(report_dir / "summary.json", report)
 
-    logger.info("Base  +RAG: action=%.3f param=%.3f thermal_param=%.3f", base_with["action_acc"], base_with["param_acc"], base_with["thermal_param_acc"])
-    logger.info("Base  -RAG: action=%.3f param=%.3f thermal_param=%.3f", base_without["action_acc"], base_without["param_acc"], base_without["thermal_param_acc"])
-    logger.info("Tuned +RAG: action=%.3f param=%.3f thermal_param=%.3f", tuned_with["action_acc"], tuned_with["param_acc"], tuned_with["thermal_param_acc"])
-    logger.info("Tuned -RAG: action=%.3f param=%.3f thermal_param=%.3f", tuned_without["action_acc"], tuned_without["param_acc"], tuned_without["thermal_param_acc"])
+    logger.info(
+        "Base  +RAG: action=%.3f param=%.3f thermal_param=%.3f",
+        base_with["action_acc"],
+        base_with["param_acc"],
+        base_with["thermal_param_acc"],
+    )
+    logger.info(
+        "Base  -RAG: action=%.3f param=%.3f thermal_param=%.3f",
+        base_without["action_acc"],
+        base_without["param_acc"],
+        base_without["thermal_param_acc"],
+    )
+    logger.info(
+        "Tuned +RAG: action=%.3f param=%.3f thermal_param=%.3f",
+        tuned_with["action_acc"],
+        tuned_with["param_acc"],
+        tuned_with["thermal_param_acc"],
+    )
+    logger.info(
+        "Tuned -RAG: action=%.3f param=%.3f thermal_param=%.3f",
+        tuned_without["action_acc"],
+        tuned_without["param_acc"],
+        tuned_without["thermal_param_acc"],
+    )
 
     report["deltas"] = {
-        "rag_lift_base_param_acc": base_with["param_acc"] - base_without["param_acc"],
-        "rag_lift_tuned_param_acc": tuned_with["param_acc"] - tuned_without["param_acc"],
-        "tune_gain_with_rag_param_acc": tuned_with["param_acc"] - base_with["param_acc"],
-        "tune_gain_without_rag_param_acc": tuned_without["param_acc"] - base_without["param_acc"],
+        "rag_lift_base_param_acc": base_with["param_acc"]
+        - base_without["param_acc"],
+        "rag_lift_tuned_param_acc": tuned_with["param_acc"]
+        - tuned_without["param_acc"],
+        "tune_gain_with_rag_param_acc": tuned_with["param_acc"]
+        - base_with["param_acc"],
+        "tune_gain_without_rag_param_acc": tuned_without["param_acc"]
+        - base_without["param_acc"],
     }
     _write_json(report_dir / "summary.json", report)
     _write_markdown(report_dir / "summary.md", report)

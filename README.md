@@ -25,7 +25,7 @@ Use it to run repeatable end-to-end experiments and iterate on **data, retrieval
 - **Adapter**: LoRA/QLoRA weights saved to `training.adapter_output_dir`.
 - **Tuned model**: base model + adapter loaded together (via `peft.PeftModel`).
 - **RAG context**: retrieved text inserted into the prompt (domain rules, docs, examples, guidelines).
-- **With RAG / without RAG**: ablation toggle that either injects retrieved context into the prompt or leaves it empty (applied at inference/eval time; training can still be RAG-enriched).
+- **With RAG / without RAG**: ablation toggle that either injects retrieved context into the prompt or leaves it empty (applied at inference/eval time via `rag.inference.enabled`; training can still be RAG-enriched via `rag.training.enabled`).
 - **Holdout IDs / `--holdout-policies`**: example smoke-dataset setting where evaluation uses document IDs that never appear in training (forces generalization via retrieval instead of memorization). In your domain, “IDs” could be SKUs, policy numbers, error codes, etc.
 - **Evaluation passes**:
   - `base_with_rag`, `base_without_rag`, `tuned_with_rag`, `tuned_without_rag`
@@ -42,7 +42,7 @@ Important: with **holdout enabled**, “without RAG” metrics can be low by des
 
 ```mermaid
 flowchart LR
-  Input[Input payload] --> RAG[RAGLeg: retrieve context]
+  Input[Input payload] --> RAG[RAGLeg (rag.inference): retrieve context]
   RAG --> Prompt[PromptLeg: build prompt]
   Prompt --> LLM["LLM inference engine<br/>(pluggable)"]
   LLM --> Output["Structured output<br/>(JSON, function-call, etc)"]
@@ -55,7 +55,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  Data[Train examples] --> RAG2[RAGLeg: enrich each example]
+  Data[Train examples] --> RAG2[RAGLeg (rag.training): enrich each example]
   RAG2 --> SFT["Build SFT text:<br/>PROMPT + ASSISTANT + TARGET"]
   SFT --> Train[TrainingLeg: LoRA/QLoRA]
   Train --> Adapter[Adapter dir]
@@ -63,14 +63,14 @@ flowchart TD
 
 - Runs **in phases**: ingest → build training file → train. It’s not interleaved with inference.
 - The smoke test uses a response delimiter `ASSISTANT:` and masks the prompt tokens during training (completion-style SFT).
-- In the smoke pipeline (`scripts/e2e_smoke.py`), RAG enrichment happens when building the training file; if `rag.enabled` is false or ingestion is skipped, training examples get empty context.
+- In the smoke pipeline (`scripts/e2e_smoke.py`), RAG enrichment happens when building the training file; if `rag.training.enabled` is false or ingestion is skipped, training examples get empty context.
 
 ### Evaluation (smoke test)
 
 - Runs **four sequential loops** over the eval split:
   - base/tuned × with/without RAG.
 - Reports are persisted so you can disconnect SSH and inspect later.
-- The "with_rag" passes inject retrieved context at prompt time; the "without_rag" passes force empty context regardless of how the training data was built.
+- The "with_rag" passes inject retrieved context at prompt time (uses `rag.inference`); the "without_rag" passes force empty context regardless of how the training data was built.
 
 For more detail on flows and feature flags, see `FLOW_OF_INFORMATION.md`.
 
@@ -88,6 +88,12 @@ pip install -r requirements-train.txt
 Notes:
 - Training downloads models from Hugging Face and caches them under `~/.cache/huggingface/` by default (override with `HF_HOME`).
 - QLoRA (4-bit) activates automatically when CUDA is available.
+
+Dev tooling (format/lint/test helpers):
+
+```bash
+pip install -r requirements-dev.txt
+```
 
 ## Running
 
@@ -134,7 +140,8 @@ After a run, inspect:
 
 ## Interfacing With Tripod (Entry Points)
 
-- `TripodOrchestrator.execute("ingest", {"documents": [...]})`: build the local vector store.
+- `TripodOrchestrator.execute("ingest", {"documents": [...], "target": "inference"})`: build the inference vector store (default target is `inference`).
+- `TripodOrchestrator.execute("ingest", {"documents": [...], "target": "training"})`: build the training vector store for data enrichment.
 - `TripodOrchestrator.execute("train")`: run LoRA/QLoRA training (expects `training.dataset_path`).
 - `TripodOrchestrator.execute("inference", {"domain": "...", "sensor_data": {...}})`: runs RAG + prompting and prints the prompt (LLM call is intentionally pluggable).
 - `scripts/e2e_smoke.py`: the most complete “batteries-included” entry point for integration testing (data generation + training + evaluation + report).
@@ -143,10 +150,12 @@ After a run, inspect:
 
 Tripod is configured via YAML under `configs/`. The key knobs:
 
+- RAG config is split into `rag.training` and `rag.inference`; if you supply a single `rag` block it is applied to both for compatibility.
 - `training.hyperparameters`: batch/epochs/seq length/optim + SFT settings
   - `response_marker`: delimiter used to split prompt vs completion (default `\nASSISTANT:\n`)
   - `mask_prompt`: if true, only the completion contributes to loss
-- `rag.retrieval.top_k`: how many docs to retrieve
+- `rag.training.enabled` / `rag.inference.enabled`: toggle retrieval for training data enrichment vs inference-time prompts
+- `rag.training.retrieval.top_k` / `rag.inference.retrieval.top_k`: how many docs to retrieve per phase
 - `prompting.system_prompt` + `prompting.user_prompt_structure`: output schema and instructions
 - `prompting.backend`: `raw` (template rendering) or `dspy` (DSPy program)
 - `prompting.dspy`: DSPy-specific knobs like `instructions`, `chain_of_thought`, and `output_field`
@@ -177,7 +186,7 @@ Where to look when something is off:
 
 - **RAG quality**
   - Logs: `core.rag` (“Retrieving top k…”)
-  - Artifacts: vector store at `rag.vector_db_path` (`docs.jsonl`, `embeddings.npy`)
+  - Artifacts: vector store at `rag.inference.vector_db_path` (`docs.jsonl`, `embeddings.npy`) and optionally `rag.training.vector_db_path`
   - Smoke: check `predictions/*.jsonl` → `rag_context` for wrong/missing retrieval.
 - **Prompting quality**
   - Logs: `core.prompting` (“Constructing prompt…”)

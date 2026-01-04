@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from core.base import BaseLeg
 from core.config import TrainingConfig
@@ -19,14 +21,21 @@ class TrainingLeg(BaseLeg):
         super().__init__(config)
 
     def run(self, input_data: Any = None):
-        if not self.config.enabled:
-            logger.info("Training leg disabled. Skipping.")
-            return
+        match self.config.enabled:
+            case False:
+                logger.info("Training leg disabled. Skipping.")
+                return
+            case True:
+                pass
 
         # Lazy imports: these are heavy and only needed on training nodes.
         from datasets import load_dataset
         import torch
-        from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+        from peft import (
+            LoraConfig,
+            get_peft_model,
+            prepare_model_for_kbit_training,
+        )
         from transformers import (
             AutoModelForCausalLM,
             AutoTokenizer,
@@ -36,7 +45,9 @@ class TrainingLeg(BaseLeg):
             default_data_collator,
         )
 
-        logger.info("Starting training on base model: %s", self.config.base_model)
+        logger.info(
+            "Starting training on base model: %s", self.config.base_model
+        )
         logger.info("Dataset path: %s", self.config.dataset_path)
         logger.info("Adapter output dir: %s", self.config.adapter_output_dir)
 
@@ -48,21 +59,30 @@ class TrainingLeg(BaseLeg):
         quant = str(hp.get("quantization", "4bit")).lower()
         use_4bit = use_cuda and quant == "4bit"
 
-        bnb_config: Optional[BitsAndBytesConfig] = None
-        model_load_kwargs: Dict[str, Any] = {"low_cpu_mem_usage": True}
-        if use_4bit:
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_use_double_quant=True,
-            )
-            model_load_kwargs.update({"quantization_config": bnb_config, "device_map": "auto"})
-            logger.info("Using QLoRA (4-bit NF4) on CUDA.")
-        else:
-            logger.info("Using full precision / non-4bit training (cuda=%s, quant=%s).", use_cuda, quant)
+        bnb_config: BitsAndBytesConfig | None = None
+        model_load_kwargs: dict[str, Any] = {"low_cpu_mem_usage": True}
+        match use_4bit:
+            case True:
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_use_double_quant=True,
+                )
+                model_load_kwargs.update(
+                    {"quantization_config": bnb_config, "device_map": "auto"}
+                )
+                logger.info("Using QLoRA (4-bit NF4) on CUDA.")
+            case False:
+                logger.info(
+                    "Using full precision / non-4bit training (cuda=%s, quant=%s).",
+                    use_cuda,
+                    quant,
+                )
 
-        tokenizer = AutoTokenizer.from_pretrained(self.config.base_model, use_fast=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.config.base_model, use_fast=True
+        )
         if tokenizer.pad_token_id is None:
             tokenizer.pad_token = tokenizer.eos_token
 
@@ -88,21 +108,29 @@ class TrainingLeg(BaseLeg):
 
         dataset_path = self.config.dataset_path
         ext = Path(dataset_path).suffix.lower()
-        ds_format = "json" if ext in {".json", ".jsonl"} else "text"
-        ds = load_dataset(ds_format, data_files={"train": dataset_path})["train"]
+        match ext:
+            case ".json" | ".jsonl":
+                ds_format = "json"
+            case _:
+                ds_format = "text"
+        ds = load_dataset(ds_format, data_files={"train": dataset_path})[
+            "train"
+        ]
 
         def to_text(row):
             # Accept either {"text": "..."} or our smoke format:
             # {"domain","device_profile","sensor_data","rag_context","expected":{...}}
-            if "text" in row:
-                return {"text": row["text"]}
-            expected = row.get("expected", {})
-            prompt = {
-                "domain": row.get("domain", "Thermal Control"),
-                "device_profile": row.get("device_profile", "eco"),
-                "sensor_data": row.get("sensor_data", {}),
-                "rag_context": row.get("rag_context", ""),
-            }
+            match row:
+                case {"text": str() as text}:
+                    return {"text": text}
+                case _:
+                    expected = row.get("expected", {})
+                    prompt = {
+                        "domain": row.get("domain", "Thermal Control"),
+                        "device_profile": row.get("device_profile", "eco"),
+                        "sensor_data": row.get("sensor_data", {}),
+                        "rag_context": row.get("rag_context", ""),
+                    }
             system = (
                 "You are a safety-first Industrial IoT controller.\n"
                 "Return ONLY valid JSON with keys: action, parameters, reasoning."
@@ -114,7 +142,11 @@ class TrainingLeg(BaseLeg):
                 "OUTPUT JSON:"
             )
             target = json.dumps(
-                {"action": expected.get("action"), "parameters": expected.get("parameters"), "reasoning": expected.get("reasoning")},
+                {
+                    "action": expected.get("action"),
+                    "parameters": expected.get("parameters"),
+                    "reasoning": expected.get("reasoning"),
+                },
                 ensure_ascii=False,
             )
             return {"text": f"SYSTEM:\n{system}\n\nUSER:\n{user}\n{target}"}
@@ -127,7 +159,11 @@ class TrainingLeg(BaseLeg):
 
         bos_id = tokenizer.bos_token_id
         eos_id = tokenizer.eos_token_id
-        pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+        pad_id = (
+            tokenizer.pad_token_id
+            if tokenizer.pad_token_id is not None
+            else tokenizer.eos_token_id
+        )
 
         def _encode_one(text: str):
             # Optional prompt/completion split for SFT-style training.
@@ -141,15 +177,25 @@ class TrainingLeg(BaseLeg):
                 prompt_part = ""
                 completion_part = text
 
-            prompt_ids = tokenizer(prompt_part, add_special_tokens=False).input_ids if prompt_part else []
-            completion_ids = tokenizer(completion_part, add_special_tokens=False).input_ids if completion_part else []
+            prompt_ids = (
+                tokenizer(prompt_part, add_special_tokens=False).input_ids
+                if prompt_part
+                else []
+            )
+            completion_ids = (
+                tokenizer(completion_part, add_special_tokens=False).input_ids
+                if completion_part
+                else []
+            )
 
             bos = [bos_id] if bos_id is not None else []
             eos = [eos_id] if eos_id is not None else []
 
             max_body = max_len - len(bos) - len(eos)
             if max_body <= 0:
-                raise ValueError(f"max_seq_length too small (need > {len(bos) + len(eos)}).")
+                raise ValueError(
+                    f"max_seq_length too small (need > {len(bos) + len(eos)})."
+                )
 
             if len(completion_ids) > max_body:
                 # Keep the tail so the model still learns the end of the completion.
@@ -164,7 +210,11 @@ class TrainingLeg(BaseLeg):
             attention_mask = [1] * len(input_ids)
 
             if do_mask:
-                labels = ([-100] * (len(bos) + len(prompt_ids))) + completion_ids + eos
+                labels = (
+                    ([-100] * (len(bos) + len(prompt_ids)))
+                    + completion_ids
+                    + eos
+                )
             else:
                 labels = input_ids.copy()
 
@@ -190,7 +240,11 @@ class TrainingLeg(BaseLeg):
                 input_ids.append(enc["input_ids"])
                 attention_mask.append(enc["attention_mask"])
                 labels.append(enc["labels"])
-            return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
+            return {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "labels": labels,
+            }
 
         ds = ds.map(tokenize, batched=True, remove_columns=["text"])
 
@@ -199,7 +253,9 @@ class TrainingLeg(BaseLeg):
         args = TrainingArguments(
             output_dir=str(output_dir),
             per_device_train_batch_size=int(hp.get("micro_batch_size", 1)),
-            gradient_accumulation_steps=int(hp.get("gradient_accumulation_steps", 4)),
+            gradient_accumulation_steps=int(
+                hp.get("gradient_accumulation_steps", 4)
+            ),
             num_train_epochs=float(hp.get("num_epochs", 1)),
             learning_rate=float(hp.get("learning_rate", 2e-4)),
             logging_steps=int(hp.get("logging_steps", 10)),
@@ -211,13 +267,21 @@ class TrainingLeg(BaseLeg):
             optim=(
                 "adamw_torch"
                 if not use_cuda
-                else str(hp.get("optim") or ("paged_adamw_8bit" if use_4bit else "adamw_torch"))
+                else str(
+                    hp.get("optim")
+                    or ("paged_adamw_8bit" if use_4bit else "adamw_torch")
+                )
             ),
             lr_scheduler_type=str(hp.get("lr_scheduler_type", "cosine")),
             warmup_ratio=float(hp.get("warmup_ratio", 0.03)),
         )
 
-        trainer = Trainer(model=model, args=args, train_dataset=ds, data_collator=data_collator)
+        trainer = Trainer(
+            model=model,
+            args=args,
+            train_dataset=ds,
+            data_collator=data_collator,
+        )
         trainer.train()
         trainer.save_model(str(output_dir))
         tokenizer.save_pretrained(str(output_dir))

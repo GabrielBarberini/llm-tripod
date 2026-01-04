@@ -18,7 +18,7 @@ import random
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Any
 
 os.environ["PYTORCH_MPS_ENABLED"] = "0"  # Force CPU to avoid MPS OOM on macOS.
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -37,13 +37,17 @@ from transformers import (
 )
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger("SmokeTest")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 VECTOR_DIR = BASE_DIR / "training_data" / "vectordb"
 VECTOR_DIR.mkdir(parents=True, exist_ok=True)
-DEVICE = torch.device("cpu")  # Keep smoke test consistent across machines (avoid MPS quirks).
+DEVICE = torch.device(
+    "cpu"
+)  # Keep smoke test consistent across machines (avoid MPS quirks).
 BASE_MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 CPU_FALLBACK_MODEL_ID = "sshleifer/tiny-gpt2"
 USE_4BIT = True  # Attempt 4-bit when CUDA + bitsandbytes are available; fallback otherwise.
@@ -69,25 +73,61 @@ HEURISTICS = [
     "If vibration is between 0.5 and 1.0 with warning, set fan near 65-75 and plan maintenance.",
 ]
 
-DUMMY_SAMPLES: List[Dict] = [
-    {"sensor": {"temp": 92, "vibration": 0.4, "status": "critical"}, "action": "increase_fan: 90; reduce_voltage: 0.2"},
-    {"sensor": {"temp": 86, "vibration": 0.3, "status": "warning"}, "action": "increase_fan: 80; reduce_voltage: 0.1"},
-    {"sensor": {"temp": 72, "vibration": 0.5, "status": "warning"}, "action": "increase_fan: 70; keep_voltage: 0.0"},
-    {"sensor": {"temp": 65, "vibration": 1.2, "status": "warning"}, "action": "schedule_maintenance: true; reduce_voltage: 0.05"},
-    {"sensor": {"temp": 78, "vibration": 0.2, "status": "stable"}, "action": "maintain_settings: true; fan_speed: 60"},
-    {"sensor": {"temp": 95, "vibration": 0.6, "status": "critical"}, "action": "increase_fan: 95; reduce_voltage: 0.25"},
-    {"sensor": {"temp": 60, "vibration": 0.1, "status": "stable"}, "action": "maintain_settings: true; fan_speed: 50"},
-    {"sensor": {"temp": 82, "vibration": 0.9, "status": "warning"}, "action": "increase_fan: 75; reduce_voltage: 0.08"},
-    {"sensor": {"temp": 88, "vibration": 0.2, "status": "critical"}, "action": "increase_fan: 85; reduce_voltage: 0.15"},
-    {"sensor": {"temp": 70, "vibration": 0.8, "status": "warning"}, "action": "increase_fan: 65; schedule_maintenance: true"},
+DUMMY_SAMPLES: list[dict[str, Any]] = [
+    {
+        "sensor": {"temp": 92, "vibration": 0.4, "status": "critical"},
+        "action": "increase_fan: 90; reduce_voltage: 0.2",
+    },
+    {
+        "sensor": {"temp": 86, "vibration": 0.3, "status": "warning"},
+        "action": "increase_fan: 80; reduce_voltage: 0.1",
+    },
+    {
+        "sensor": {"temp": 72, "vibration": 0.5, "status": "warning"},
+        "action": "increase_fan: 70; keep_voltage: 0.0",
+    },
+    {
+        "sensor": {"temp": 65, "vibration": 1.2, "status": "warning"},
+        "action": "schedule_maintenance: true; reduce_voltage: 0.05",
+    },
+    {
+        "sensor": {"temp": 78, "vibration": 0.2, "status": "stable"},
+        "action": "maintain_settings: true; fan_speed: 60",
+    },
+    {
+        "sensor": {"temp": 95, "vibration": 0.6, "status": "critical"},
+        "action": "increase_fan: 95; reduce_voltage: 0.25",
+    },
+    {
+        "sensor": {"temp": 60, "vibration": 0.1, "status": "stable"},
+        "action": "maintain_settings: true; fan_speed: 50",
+    },
+    {
+        "sensor": {"temp": 82, "vibration": 0.9, "status": "warning"},
+        "action": "increase_fan: 75; reduce_voltage: 0.08",
+    },
+    {
+        "sensor": {"temp": 88, "vibration": 0.2, "status": "critical"},
+        "action": "increase_fan: 85; reduce_voltage: 0.15",
+    },
+    {
+        "sensor": {"temp": 70, "vibration": 0.8, "status": "warning"},
+        "action": "increase_fan: 65; schedule_maintenance: true",
+    },
 ]
 
 AUG_FACTOR = 2  # Replicate dummy samples; keep small for CPU fallback.
 MAX_CORPUS = 40  # Cap total samples to keep smoke test tractable.
 
 FEW_SHOTS = [
-    {"sensor": {"temp": 92, "vibration": 0.4, "status": "critical"}, "action": "increase_fan: 90; reduce_voltage: 0.2"},
-    {"sensor": {"temp": 65, "vibration": 1.2, "status": "warning"}, "action": "schedule_maintenance: true; reduce_voltage: 0.05"},
+    {
+        "sensor": {"temp": 92, "vibration": 0.4, "status": "critical"},
+        "action": "increase_fan: 90; reduce_voltage: 0.2",
+    },
+    {
+        "sensor": {"temp": 65, "vibration": 1.2, "status": "warning"},
+        "action": "schedule_maintenance: true; reduce_voltage: 0.05",
+    },
 ]
 
 
@@ -97,31 +137,43 @@ def set_seeds(seed: int = 42):
     torch.manual_seed(seed)
 
 
-def describe_sensor(sensor: Dict) -> str:
-    return f"temp={sensor['temp']}C | vibration={sensor['vibration']}g | status={sensor['status']}"
+def describe_sensor(sensor: dict[str, Any]) -> str:
+    match sensor:
+        case {"temp": temp, "vibration": vibration, "status": status}:
+            return f"temp={temp}C | vibration={vibration}g | status={status}"
+        case _:
+            return json.dumps(sensor)
 
 
 @dataclass
 class RetrievedContext:
     text: str
     score: float
-    metadata: Dict
+    metadata: dict[str, Any]
 
 
 class LocalVectorDB:
     """Lightweight in-memory vector store with persistence of metadata/heuristics."""
 
-    def __init__(self, heuristics: List[str]):
+    def __init__(self, heuristics: list[str]):
         self.heuristics = heuristics
-        self.embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device=str(DEVICE))
-        self.embeddings = self.embedder.encode(heuristics, normalize_embeddings=True)
+        self.embedder = SentenceTransformer(
+            "sentence-transformers/all-MiniLM-L6-v2", device=str(DEVICE)
+        )
+        self.embeddings = self.embedder.encode(
+            heuristics, normalize_embeddings=True
+        )
 
-    def search(self, query: str, top_k: int = 1) -> List[RetrievedContext]:
+    def search(self, query: str, top_k: int = 1) -> list[RetrievedContext]:
         query_vec = self.embedder.encode([query], normalize_embeddings=True)[0]
         scores = np.dot(self.embeddings, query_vec)
         top_idx = np.argsort(scores)[::-1][:top_k]
         return [
-            RetrievedContext(text=self.heuristics[i], score=float(scores[i]), metadata={"rule_id": i})
+            RetrievedContext(
+                text=self.heuristics[i],
+                score=float(scores[i]),
+                metadata={"rule_id": i},
+            )
             for i in top_idx
         ]
 
@@ -134,7 +186,7 @@ class LocalVectorDB:
         logger.info("Persisted heuristic store to %s", path)
 
 
-def build_prompt(sensor: Dict, rag_context: str) -> str:
+def build_prompt(sensor: dict[str, Any], rag_context: str) -> str:
     few_shot_block = "\n".join(
         [
             f"EXAMPLE SENSOR: {json.dumps(fs['sensor'])}\nEXAMPLE ACTION: {fs['action']}"
@@ -152,10 +204,12 @@ def build_prompt(sensor: Dict, rag_context: str) -> str:
 
 def prepare_datasets(db: LocalVectorDB):
     set_seeds(42)
-    all_samples: List[Dict] = []
+    all_samples: list[dict[str, Any]] = []
     for _ in range(AUG_FACTOR):
         for sample in DUMMY_SAMPLES:
-            all_samples.append({"sensor": sample["sensor"].copy(), "action": sample["action"]})
+            all_samples.append(
+                {"sensor": sample["sensor"].copy(), "action": sample["action"]}
+            )
 
     if len(all_samples) > MAX_CORPUS:
         all_samples = all_samples[:MAX_CORPUS]
@@ -172,7 +226,12 @@ def prepare_datasets(db: LocalVectorDB):
 
     train_texts = [to_text(s, include_action=True) for s in train_samples]
     test_prompts = [to_text(s, include_action=False) for s in test_samples]
-    return train_samples, test_samples, Dataset.from_dict({"text": train_texts}), Dataset.from_dict({"text": test_prompts})
+    return (
+        train_samples,
+        test_samples,
+        Dataset.from_dict({"text": train_texts}),
+        Dataset.from_dict({"text": test_prompts}),
+    )
 
 
 def tokenize_dataset(dataset: Dataset, tokenizer: AutoTokenizer) -> Dataset:
@@ -207,18 +266,27 @@ def train_model(train_ds: Dataset, tokenizer: AutoTokenizer):
                     "device_map": "auto",
                 }
             )
-            logger.info("Loading model in 4-bit (requires CUDA + bitsandbytes).")
+            logger.info(
+                "Loading model in 4-bit (requires CUDA + bitsandbytes)."
+            )
         except ImportError:
-            logger.warning("bitsandbytes not available; falling back to fp16 on CPU.")
+            logger.warning(
+                "bitsandbytes not available; falling back to fp16 on CPU."
+            )
     else:
         effective_model_id = CPU_FALLBACK_MODEL_ID  # Smaller fallback for CPU-only environments.
         per_device_bs = 1
         num_epochs = 1
-        logger.info("CUDA unavailable; using fallback model %s on CPU to avoid OOM.", effective_model_id)
+        logger.info(
+            "CUDA unavailable; using fallback model %s on CPU to avoid OOM.",
+            effective_model_id,
+        )
 
     model = AutoModelForCausalLM.from_pretrained(
         effective_model_id,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        torch_dtype=(
+            torch.float16 if torch.cuda.is_available() else torch.float32
+        ),
         low_cpu_mem_usage=True,
         **load_kwargs,
     )
@@ -242,7 +310,9 @@ def train_model(train_ds: Dataset, tokenizer: AutoTokenizer):
         dataloader_pin_memory=False,
     )
 
-    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer, mlm=False
+    )
     trainer = Trainer(
         model=model,
         args=args,
@@ -254,7 +324,12 @@ def train_model(train_ds: Dataset, tokenizer: AutoTokenizer):
     return model
 
 
-def evaluate(model, tokenizer: AutoTokenizer, db: LocalVectorDB, test_samples: List[Dict]):
+def evaluate(
+    model,
+    tokenizer: AutoTokenizer,
+    db: LocalVectorDB,
+    test_samples: list[dict[str, Any]],
+):
     logger.info("Evaluating on %s held-out samples", len(test_samples))
     model = model.to(DEVICE)
     hits = 0
@@ -275,10 +350,15 @@ def evaluate(model, tokenizer: AutoTokenizer, db: LocalVectorDB, test_samples: L
             repetition_penalty=GEN_REP_PENALTY,
             pad_token_id=tokenizer.eos_token_id,
         )
-        generated = tokenizer.decode(outputs[0][input_ids.shape[1]:], skip_special_tokens=True).strip()
+        generated = tokenizer.decode(
+            outputs[0][input_ids.shape[1] :], skip_special_tokens=True
+        ).strip()
         expected = sample["action"]
         # Loose match: check if primary verb from expected is present.
-        matched = expected.split(";")[0].split(":")[0].strip().lower() in generated.lower()
+        matched = (
+            expected.split(";")[0].split(":")[0].strip().lower()
+            in generated.lower()
+        )
         hits += int(matched)
         results.append(
             {
@@ -302,7 +382,9 @@ def main():
 
     train_samples, test_samples, train_ds, test_prompts = prepare_datasets(db)
 
-    tokenizer_id = BASE_MODEL_ID if torch.cuda.is_available() else CPU_FALLBACK_MODEL_ID
+    tokenizer_id = (
+        BASE_MODEL_ID if torch.cuda.is_available() else CPU_FALLBACK_MODEL_ID
+    )
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_id)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token

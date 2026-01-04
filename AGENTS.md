@@ -11,6 +11,7 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
 
 ## Setup, Build, and Development Commands
 - Python 3.10+ recommended; install deps: `pip install pydantic pyyaml`.
+- Dev tooling (format/lint/test): `pip install -r requirements-dev.txt`.
 - Inference demo (uses `configs/iot_domain_config.yaml`):  
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('inference', {'sensor_data': {'temp': 78.5, 'vibration': 1.2}})"
@@ -35,7 +36,7 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
 
 ## Testing Guidelines
 - Place tests under `tests/` as `test_*.py`; run with `pytest -q`.
-- Cover TripodConfig parsing, prompt rendering substitutions, RAG selection knobs (`top_k`, `strategy`, thresholds), and training leg toggles.
+- Cover TripodConfig parsing, prompt rendering substitutions, RAG selection knobs for `rag.training`/`rag.inference` (`top_k`, `strategy`, thresholds), and training leg toggles.
 - When adding modes or legs, include an integration-style test that exercises `TripodOrchestrator.execute`.
 
 ## Commit & Pull Request Guidelines

@@ -23,7 +23,7 @@ import argparse
 import json
 import random
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -35,10 +35,22 @@ STATUSES = ["stable", "warning", "critical"]
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--out-dir", default="training_data/smoke", help="Output directory")
+    p.add_argument(
+        "--out-dir", default="training_data/smoke", help="Output directory"
+    )
     p.add_argument("--n", type=int, default=2000, help="Number of samples")
-    p.add_argument("--num-policies", type=int, default=50, help="Number of distinct policy docs")
-    p.add_argument("--train-policy-ratio", type=float, default=0.8, help="Fraction of policies used for training split")
+    p.add_argument(
+        "--num-policies",
+        type=int,
+        default=50,
+        help="Number of distinct policy docs",
+    )
+    p.add_argument(
+        "--train-policy-ratio",
+        type=float,
+        default=0.8,
+        help="Fraction of policies used for training split",
+    )
     p.add_argument(
         "--holdout-policies",
         action=argparse.BooleanOptionalAction,
@@ -54,7 +66,7 @@ def clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
 
-def make_policy(rng: random.Random, policy_id: str) -> Dict:
+def make_policy(rng: random.Random, policy_id: str) -> dict[str, Any]:
     warning_fan = rng.randint(70, 90)
     critical_fan = rng.randint(min(warning_fan + 5, 95), 100)
     vb_warning = round(rng.uniform(-0.12, -0.02), 2)
@@ -67,10 +79,18 @@ def make_policy(rng: random.Random, policy_id: str) -> Dict:
     }
 
 
-def decide(policy: Dict, sensor: Dict) -> Tuple[str, Dict, str]:
-    temp = float(sensor["temp"])
-    vibration = float(sensor["vibration"])
-    status = str(sensor["status"]).lower()
+def decide(
+    policy: dict[str, Any], sensor: dict[str, Any]
+) -> tuple[str, dict[str, Any], str]:
+    match sensor:
+        case {"temp": temp, "vibration": vibration, "status": status}:
+            temp = float(temp)
+            vibration = float(vibration)
+            status = str(status).lower()
+        case _:
+            raise ValueError(
+                "sensor must include temp, vibration, and status fields."
+            )
 
     if status == "critical" or temp >= 90:
         action = "set_thermal_profile"
@@ -78,13 +98,17 @@ def decide(policy: Dict, sensor: Dict) -> Tuple[str, Dict, str]:
             "fan_speed": int(policy["critical_fan"]),
             "voltage_bias": float(policy["voltage_bias_critical"]),
         }
-        reasoning = "Critical thermal risk: maximize cooling and reduce voltage."
+        reasoning = (
+            "Critical thermal risk: maximize cooling and reduce voltage."
+        )
         return action, parameters, reasoning
 
     if vibration >= 1.0:
         action = "schedule_maintenance"
         parameters = {"fan_speed": int(70), "voltage_bias": float(-0.05)}
-        reasoning = "High vibration suggests mechanical risk: schedule maintenance."
+        reasoning = (
+            "High vibration suggests mechanical risk: schedule maintenance."
+        )
         return action, parameters, reasoning
 
     if status == "warning" or temp >= 80:
@@ -102,26 +126,31 @@ def decide(policy: Dict, sensor: Dict) -> Tuple[str, Dict, str]:
     return action, parameters, reasoning
 
 
-def make_sensor(rng: random.Random) -> Dict:
+def make_sensor(rng: random.Random) -> dict[str, Any]:
     # Bias toward warning/critical to ensure policy parameters matter.
     status = rng.choices(STATUSES, weights=[0.35, 0.45, 0.20])[0]
-    if status == "stable":
-        temp = rng.uniform(55, 79)
-    elif status == "warning":
-        temp = rng.uniform(75, 92)
-    else:
-        temp = rng.uniform(88, 105)
+    match status:
+        case "stable":
+            temp = rng.uniform(55, 79)
+        case "warning":
+            temp = rng.uniform(75, 92)
+        case _:
+            temp = rng.uniform(88, 105)
 
     vibration = rng.uniform(0.05, 1.4)
     # couple vibration with status a bit
     if status == "critical":
         vibration = clamp(vibration + rng.uniform(0.0, 0.3), 0.05, 1.4)
-    return {"temp": round(temp, 1), "vibration": round(vibration, 2), "status": status}
+    return {
+        "temp": round(temp, 1),
+        "vibration": round(vibration, 2),
+        "status": status,
+    }
 
 
-def write_jsonl(path: Path, rows):
+def write_jsonl(path: Path, rows: list[dict[str, Any]]):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row) + "\n")
 
@@ -133,17 +162,24 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Policies: generate a set of distinct policy docs.
-    policies = [make_policy(rng, f"policy_{i:03d}") for i in range(args.num_policies)]
+    policies = [
+        make_policy(rng, f"policy_{i:03d}") for i in range(args.num_policies)
+    ]
     policy_ids = [p["policy_id"] for p in policies]
     rng.shuffle(policy_ids)
 
-    if args.holdout_policies:
-        train_policy_count = max(1, int(len(policy_ids) * args.train_policy_ratio))
-        train_policy_ids = set(policy_ids[:train_policy_count])
-        test_policy_ids = set(policy_ids[train_policy_count:]) or set(policy_ids[:1])
-    else:
-        train_policy_ids = set(policy_ids)
-        test_policy_ids = set(policy_ids)
+    match bool(args.holdout_policies):
+        case True:
+            train_policy_count = max(
+                1, int(len(policy_ids) * args.train_policy_ratio)
+            )
+            train_policy_ids = set(policy_ids[:train_policy_count])
+            test_policy_ids = set(policy_ids[train_policy_count:]) or set(
+                policy_ids[:1]
+            )
+        case False:
+            train_policy_ids = set(policy_ids)
+            test_policy_ids = set(policy_ids)
 
     rag_docs = []
     for p in policies:
@@ -196,7 +232,11 @@ def main():
                 "domain": "Thermal Control",
                 "policy_id": policy_id,
                 "sensor_data": sensor,
-                "expected": {"action": action, "parameters": parameters, "reasoning": reasoning},
+                "expected": {
+                    "action": action,
+                    "parameters": parameters,
+                    "reasoning": reasoning,
+                },
             }
         )
 
@@ -210,7 +250,11 @@ def main():
                 "domain": "Thermal Control",
                 "policy_id": policy_id,
                 "sensor_data": sensor,
-                "expected": {"action": action, "parameters": parameters, "reasoning": reasoning},
+                "expected": {
+                    "action": action,
+                    "parameters": parameters,
+                    "reasoning": reasoning,
+                },
             }
         )
 
