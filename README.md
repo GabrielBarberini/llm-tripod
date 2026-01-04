@@ -32,7 +32,7 @@ Use it to run repeatable end-to-end experiments and iterate on **data, retrieval
 
 Important: with **holdout enabled**, “without RAG” metrics can be low by design (the prompt may not contain the missing information).
 
-## Flow of Information (When Legs Run)
+## Flow of Information summary
 
 ### Training (offline on GPU node)
 
@@ -44,12 +44,12 @@ flowchart TD
   Train --> Adapter[Adapter dir]
 ```
 
-- Runs **in phases**: ingest → build training file → train. It’s not interleaved with inference.
+- Runs **in phases**: ingest → build training file → train.
 - The smoke test uses a response delimiter `ASSISTANT:` and masks the prompt tokens during training (completion-style SFT).
 - The SFT text combines prompt and target (`PROMPT + ASSISTANT + TARGET`).
 - In the smoke pipeline (`scripts/e2e_smoke.py`), RAG enrichment happens when building the training file; if `rag.training.enabled` is false or ingestion is skipped, training examples get empty context.
 
-### Inference (runtime on device)
+### Inference
 
 ```mermaid
 flowchart LR
@@ -62,7 +62,7 @@ flowchart LR
 - Runs **sequentially**: RAG → Prompt → LLM.
 - In `main.py`, the “LLM inference engine” is a placeholder that prints the prompt for inspection.
 
-### Evaluation (smoke test)
+### Evaluation
 
 - Runs **sequential loops** over the eval split.
 - Pass naming and metrics are defined by the evaluation script (see `scripts/README.md` for smoke-test details).
