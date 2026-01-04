@@ -6,6 +6,7 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
 - `core/training.py`, `core/rag.py`, `core/prompting.py`: Leg implementations; extend or swap logic inside each file.
 - `core/config.py`, `core/base.py`: Pydantic config schemas and shared base class.
 - `configs/iot_domain_config.yaml`: Domain config (paths, hyperparameters, prompts). Place any hardcoded values or additional YAMLs here.
+- `scripts/README.md`: Smoke-test passes, metrics, and report artifacts.
 - `training_data/`: Local root for vectordb/test sets referenced by config. Create as needed; keep large assets out of Git.
 - Outputs (adapters/experiments) default to `../artifacts`/`../experiments` to keep the repo lean; adjust per environment.
 
@@ -20,9 +21,13 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('train')"
   ```
-- Ingestion placeholder (document list):  
+- Ingestion placeholder (document list, defaults to inference RAG):  
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('ingest', {'documents': ['sample note']})"
+  ```
+- Ingestion targeting training RAG:  
+  ```bash
+  python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('ingest', {'documents': ['sample note'], 'target': 'training'})"
   ```
 - To use a different config file, pass `TripodOrchestrator('configs/your_config.yaml')`.
 - Smoke cross-section (downloads tiny HF models): `python scripts/smoke_cross_section.py`
@@ -33,6 +38,10 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
 - PEP 8 with type hints; config surfaces stay typed via Pydantic models.
 - Classes in `CamelCase`; functions/variables in `snake_case`; YAML keys remain lower_snake.
 - Use `logging` (preconfigured) for diagnostics; reserve `print` for intentional user-facing output (e.g., rendered prompt).
+- Prefer structural pattern matching (`match`/destructuring) for parsing and branching when it clarifies intent.
+- Keep code slim: avoid inline comments and verbose metadata unless it reduces cognitive load.
+- No wildcard imports; prefer explicit imports.
+- Prefer explicit config over hidden defaults; validate at the boundary (raise early on invalid inputs).
 
 ## Testing Guidelines
 - Place tests under `tests/` as `test_*.py`; run with `pytest -q`.
