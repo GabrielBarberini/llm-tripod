@@ -26,7 +26,7 @@ Use it to run repeatable end-to-end experiments and iterate on **data, retrieval
 - **Adapter**: LoRA/QLoRA weights saved to `training.adapter_output_dir`.
 - **Tuned model**: base model + adapter loaded together (via `peft.PeftModel`).
 - **RAG context**: retrieved text inserted into the prompt (domain rules, docs, examples, guidelines).
-- **With RAG / without RAG**: ablation toggle that either injects retrieved context into the prompt or leaves it empty.
+- **With RAG / without RAG**: ablation toggle that either injects retrieved context into the prompt or leaves it empty (applied at inference/eval time; training can still be RAG-enriched).
 - **Holdout IDs / `--holdout-policies`**: example smoke-dataset setting where evaluation uses document IDs that never appear in training (forces generalization via retrieval instead of memorization). In your domain, “IDs” could be SKUs, policy numbers, error codes, etc.
 - **Evaluation passes**:
   - `base_with_rag`, `base_without_rag`, `tuned_with_rag`, `tuned_without_rag`
@@ -45,8 +45,8 @@ Important: with **holdout enabled**, “without RAG” metrics can be low by des
 flowchart LR
   Input[Input payload] --> RAG[RAGLeg: retrieve context]
   RAG --> Prompt[PromptLeg: build prompt]
-  Prompt --> LLM[LLM inference engine\n(pluggable)]
-  LLM --> Output[Structured output\n(JSON, function-call, etc)]
+  Prompt --> LLM["LLM inference engine<br/>(pluggable)"]
+  LLM --> Output["Structured output<br/>(JSON, function-call, etc)"]
 ```
 
 - Runs **sequentially**: RAG → Prompt → LLM.
@@ -57,19 +57,23 @@ flowchart LR
 ```mermaid
 flowchart TD
   Data[Train examples] --> RAG2[RAGLeg: enrich each example]
-  RAG2 --> SFT[Build SFT text:\nPROMPT + ASSISTANT + TARGET]
+  RAG2 --> SFT["Build SFT text:<br/>PROMPT + ASSISTANT + TARGET"]
   SFT --> Train[TrainingLeg: LoRA/QLoRA]
   Train --> Adapter[Adapter dir]
 ```
 
 - Runs **in phases**: ingest → build training file → train. It’s not interleaved with inference.
 - The smoke test uses a response delimiter `ASSISTANT:` and masks the prompt tokens during training (completion-style SFT).
+- In the smoke pipeline (`scripts/e2e_smoke.py`), RAG enrichment happens when building the training file; if `rag.enabled` is false or ingestion is skipped, training examples get empty context.
 
 ### Evaluation (smoke test)
 
 - Runs **four sequential loops** over the eval split:
   - base/tuned × with/without RAG.
 - Reports are persisted so you can disconnect SSH and inspect later.
+- The "with_rag" passes inject retrieved context at prompt time; the "without_rag" passes force empty context regardless of how the training data was built.
+
+For more detail on flows and feature flags, see `FLOW_OF_INFORMATION.md`.
 
 ## Setup
 
@@ -95,6 +99,19 @@ python3 main.py
 ```
 
 This prints the final prompt after running RAG + prompting, so you can validate the “context → prompt” wiring.
+
+### DSPy prompting
+
+Set `prompting.backend: "dspy"` and configure a DSPy LM before running inference:
+
+```python
+import dspy
+
+# Configure your LM before calling TripodOrchestrator.execute(...).
+dspy.settings.configure(lm=...)
+```
+
+Tripod will return the DSPy prediction string. Use `prompting.backend: "raw"` for prompt-only rendering.
 
 ### End-to-end smoke (recommended)
 
@@ -132,6 +149,8 @@ Tripod is configured via YAML under `configs/`. The key knobs:
   - `mask_prompt`: if true, only the completion contributes to loss
 - `rag.retrieval.top_k`: how many docs to retrieve
 - `prompting.system_prompt` + `prompting.user_prompt_structure`: output schema and instructions
+- `prompting.backend`: `raw` (template rendering) or `dspy` (DSPy program)
+- `prompting.dspy`: DSPy-specific knobs like `instructions`, `chain_of_thought`, and `output_field`
 
 Use `configs/smoke_config.yaml` as a working template.
 
