@@ -13,3 +13,8 @@ training_data/**/adapter/
 # OS / editor
 .DS_Store
 .vscode/
+
+# test output
+log.html
+report.html
+output.xml
