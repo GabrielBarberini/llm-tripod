@@ -8,6 +8,14 @@ Tripod is a small, modular **LLM integration-test harness** that separates the p
 
 Use it to run repeatable end-to-end experiments and iterate on **data, retrieval, and prompting** until the target task meets your metrics.
 
+## Scope and Intent
+
+Tripod is a lightweight integration-test harness, not a full training platform.
+It favors clarity and a small, extensible surface over exhaustive knobs.
+
+- Configs expose a minimal set of controls; extend `core/training.py` and `core/rag.py` for domain-specific requirements.
+- Smoke tests and example pipelines are templates for adaptation, not benchmarks.
+
 ## Repository Structure
 
 - `core/`: implementations for `TrainingLeg`, `RAGLeg`, `PromptLeg`, plus config models.
