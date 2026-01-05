@@ -1,20 +1,12 @@
 # LLM Tripod
 
-Tripod is a small, modular **LLM integration-test harness** that separates the pipeline into three “legs”:
+Tripod is a lightweight, modular **LLM integration-test harness** for fast end-to-end iteration (not a full training platform). It separates the pipeline into three “legs”:
 
 1. **Training (Leg 1)**: Fine-tune a small LLM with LoRA/QLoRA (`core/training.py`).
 2. **RAG (Leg 2)**: Retrieve relevant reference snippets from a local vector store (`core/rag.py`, `core/vectordb.py`).
 3. **Prompting (Leg 3)**: Build a deterministic prompt + output schema (`core/prompting.py`).
 
-Use it to run repeatable end-to-end experiments and iterate on **data, retrieval, and prompting** until the target task meets your metrics.
-
-## Scope and Intent
-
-Tripod is a lightweight integration-test harness, not a full training platform.
-It favors clarity and a small, extensible surface over exhaustive knobs.
-
-- Configs expose a minimal set of controls; extend `core/training.py` and `core/rag.py` for domain-specific requirements.
-- Smoke tests and example pipelines are templates for adaptation, not benchmarks.
+Use it to run repeatable end-to-end experiments and iterate on **data, retrieval, and prompting** until the target task meets your metrics. Configs expose a minimal set of controls; extend `core/training.py` and `core/rag.py` for domain-specific requirements. Smoke tests and example pipelines are templates for adaptation, not benchmarks.
 
 ## Repository Structure
 
