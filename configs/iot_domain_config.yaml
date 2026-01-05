@@ -33,51 +33,37 @@ training:
     logging_steps: 10
 
 # ------------------------------------------------------------------------------
-# LEG 2: RAG MANAGEMENT (Training + Inference)
+# LEG 2: RETRIEVAL MANAGEMENT (RAFT + RAG)
 # ------------------------------------------------------------------------------
 rag:
-  # Configure training vs inference independently; use the same store if desired.
-  training:
-    enabled: true
-    vector_db_type: "chromadb" # chromadb, pinecone, faiss
-    vector_db_path: "./training_data/vectordb"
-    collection_name: "iot_history_logs"
+  enabled: true
+  vector_db_type: "chromadb" # chromadb, pinecone, faiss
+  vector_db_path: "./training_data/vectordb"
+  collection_name: "iot_history_logs"
 
-    # Ingestion Config
-    ingestion:
-      chunk_size: 512
-      chunk_overlap: 50
-      embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  # Ingestion Config
+  ingestion:
+    embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
 
-    # Retrieval Config (The knobs you tweak)
-    retrieval:
-      strategy: "similarity" # similarity, mmr, hybrid
-      top_k: 5
-      score_threshold: 0.75
-      reranking:
-        enabled: false
-        model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  # Retrieval Config (The knobs you tweak)
+  retrieval:
+    strategy: "similarity" # similarity, mmr, hybrid
+    top_k: 5
 
-  inference:
-    enabled: true
-    vector_db_type: "chromadb" # chromadb, pinecone, faiss
-    vector_db_path: "./training_data/vectordb"
-    collection_name: "iot_history_logs"
+raft:
+  enabled: true
+  vector_db_type: "chromadb" # chromadb, pinecone, faiss
+  vector_db_path: "./training_data/vectordb"
+  collection_name: "iot_history_logs"
 
-    # Ingestion Config
-    ingestion:
-      chunk_size: 512
-      chunk_overlap: 50
-      embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  # Ingestion Config
+  ingestion:
+    embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
 
-    # Retrieval Config (The knobs you tweak)
-    retrieval:
-      strategy: "similarity" # similarity, mmr, hybrid
-      top_k: 5
-      score_threshold: 0.75
-      reranking:
-        enabled: false
-        model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  # Retrieval Config (The knobs you tweak)
+  retrieval:
+    strategy: "similarity" # similarity, mmr, hybrid
+    top_k: 5
 
 # ------------------------------------------------------------------------------
 # LEG 3: PROMPT ENGINEERING (Instructions)

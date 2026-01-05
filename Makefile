@@ -24,11 +24,11 @@ endif
 format: black ruff
 
 black:
-	$(BLACK) ./core ./scripts ./main.py || true
+	$(BLACK) ./core ./main.py || true
 	if [ -d ./tests ]; then $(BLACK) ./tests || true; else echo "No ./tests directory."; fi
 
 ruff:
-	$(RUFF) check --fix ./core ./scripts ./main.py || true
+	$(RUFF) check --fix ./core ./main.py || true
 	if [ -d ./tests ]; then $(RUFF) check --fix ./tests || true; else echo "No ./tests directory."; fi
 
 test:

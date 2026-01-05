@@ -127,7 +127,6 @@ def decide(
 
 
 def make_sensor(rng: random.Random) -> dict[str, Any]:
-    # Bias toward warning/critical to ensure policy parameters matter.
     status = rng.choices(STATUSES, weights=[0.35, 0.45, 0.20])[0]
     match status:
         case "stable":
@@ -138,7 +137,6 @@ def make_sensor(rng: random.Random) -> dict[str, Any]:
             temp = rng.uniform(88, 105)
 
     vibration = rng.uniform(0.05, 1.4)
-    # couple vibration with status a bit
     if status == "critical":
         vibration = clamp(vibration + rng.uniform(0.0, 0.3), 0.05, 1.4)
     return {
@@ -161,7 +159,6 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Policies: generate a set of distinct policy docs.
     policies = [
         make_policy(rng, f"policy_{i:03d}") for i in range(args.num_policies)
     ]
@@ -196,7 +193,6 @@ def main():
             }
         )
 
-    # Generic heuristics that apply regardless of policy_id.
     rag_docs.extend(
         [
             {
@@ -213,8 +209,6 @@ def main():
     )
     write_jsonl(out_dir / "rag_docs.jsonl", rag_docs)
 
-    # Generate train/test samples with policy-id holdout:
-    # train samples only use train_policy_ids; test samples only use test_policy_ids.
     n_train = int(args.n * (1.0 - args.test_ratio))
     n_test = max(1, args.n - n_train)
 

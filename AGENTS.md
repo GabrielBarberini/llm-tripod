@@ -6,7 +6,7 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
 - `core/training.py`, `core/rag.py`, `core/prompting.py`: Leg implementations; extend or swap logic inside each file.
 - `core/config.py`, `core/base.py`: Pydantic config schemas and shared base class.
 - `configs/iot_domain_config.yaml`: Domain config (paths, hyperparameters, prompts). Place any hardcoded values or additional YAMLs here.
-- `scripts/README.md`: Smoke-test passes, metrics, and report artifacts.
+- `tests/README.md`: Smoke-test passes, metrics, and report artifacts.
 - `training_data/`: Local root for vectordb/test sets referenced by config. Create as needed; keep large assets out of Git.
 - Outputs (adapters/experiments) default to `../artifacts`/`../experiments` to keep the repo lean; adjust per environment.
 
@@ -21,17 +21,17 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('train')"
   ```
-- Ingestion placeholder (document list, defaults to inference RAG):  
+- Ingestion placeholder (document list, defaults to RAG):  
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('ingest', {'documents': ['sample note']})"
   ```
-- Ingestion targeting training RAG:  
+- Ingestion targeting RAFT:  
   ```bash
-  python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('ingest', {'documents': ['sample note'], 'target': 'training'})"
+  python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('ingest', {'documents': ['sample note'], 'target': 'raft'})"
   ```
 - To use a different config file, pass `TripodOrchestrator('configs/your_config.yaml')`.
-- Smoke cross-section (downloads tiny HF models): `python scripts/smoke_cross_section.py`
-- End-to-end smoke (GPU recommended): `python scripts/e2e_smoke.py`
+- Local smoke (downloads tiny HF models): `python tests/smoke_local.py`
+- End-to-end smoke (GPU recommended): `python tests/smoke_e2e.py`
 - Docker (optional): `docker build -t tripod .` then `docker run --rm --gpus all tripod python main.py`
 
 ## Coding Style & Naming Conventions
@@ -45,7 +45,7 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
 
 ## Testing Guidelines
 - Place tests under `tests/` as `test_*.py`; run with `pytest -q`.
-- Cover TripodConfig parsing, prompt rendering substitutions, RAG selection knobs for `rag.training`/`rag.inference` (`top_k`, `strategy`, thresholds), and training leg toggles.
+- Cover TripodConfig parsing, prompt rendering substitutions, RAG/RAFT selection knobs (`rag.*`, `raft.*`), and training leg toggles.
 - When adding modes or legs, include an integration-style test that exercises `TripodOrchestrator.execute`.
 
 ## Commit & Pull Request Guidelines

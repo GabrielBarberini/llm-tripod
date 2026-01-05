@@ -33,7 +33,7 @@ class LocalVectorStore:
     ):
         self.embedder = embedder
         self.docs = docs
-        self.embeddings = embeddings  # shape: (n_docs, dim), normalized
+        self.embeddings = embeddings
 
     @staticmethod
     def _normalize(x: np.ndarray) -> np.ndarray:

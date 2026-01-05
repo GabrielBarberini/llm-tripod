@@ -11,7 +11,6 @@ from core.prompting import PromptLeg
 from core.rag import RAGLeg
 from core.training import TrainingLeg
 
-# Configure logging early for consistent output across modules.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -26,10 +25,9 @@ class TripodOrchestrator:
         self.config_path = Path(config_path)
         self.config = self._load_config(self.config_path)
 
-        # Initialize legs
         self.trainer = TrainingLeg(self.config.training)
-        self.rag_training = RAGLeg(self.config.rag.training)
-        self.rag_inference = RAGLeg(self.config.rag.inference)
+        self.raft = RAGLeg(self.config.raft)
+        self.rag = RAGLeg(self.config.rag)
         self.prompter = PromptLeg(self.config.prompting)
 
     def _load_config(self, path: Path) -> TripodConfig:
@@ -43,14 +41,14 @@ class TripodOrchestrator:
             case _:
                 raise ValueError("Config root must be a mapping.")
 
-    def _select_rag(self, target: str) -> RAGLeg:
+    def _select_retrieval(self, target: str) -> RAGLeg:
         match target.lower():
-            case "training":
-                return self.rag_training
-            case "inference":
-                return self.rag_inference
+            case "raft" | "training":
+                return self.raft
+            case "rag" | "inference":
+                return self.rag
             case _:
-                raise ValueError(f"Unsupported RAG target: {target}")
+                raise ValueError(f"Unsupported retrieval target: {target}")
 
     def execute(
         self,
@@ -74,14 +72,14 @@ class TripodOrchestrator:
                         "target": str() as target,
                         **_rest,
                     }:
-                        rag_target = target
+                        retrieval_target = target
                     case {"documents": list() as documents, **_rest}:
-                        rag_target = "inference"
+                        retrieval_target = "rag"
                     case _:
                         raise ValueError(
                             "Input payload with documents list is required for ingest."
                         )
-                self._select_rag(rag_target).ingest(documents)
+                self._select_retrieval(retrieval_target).ingest(documents)
             case "inference":
                 match input_payload:
                     case {
@@ -94,12 +92,8 @@ class TripodOrchestrator:
                             "Input payload with sensor_data is required for inference."
                         )
 
-                # Step 1: Retrieve context
-                retrieved_context = self.rag_inference.run(
-                    query=str(sensor_data)
-                )
+                retrieved_context = self.rag.run(query=str(sensor_data))
 
-                # Step 2: Build prompt
                 prompt_context = {
                     "domain": domain,
                     "rag_context": retrieved_context,
@@ -107,7 +101,6 @@ class TripodOrchestrator:
                 }
                 prompt_output = self.prompter.run(prompt_context)
 
-                # Step 3: Model Generation (placeholder for actual LLM call)
                 match self.prompter.backend:
                     case "dspy":
                         logger.info("DSPy output ready.")
@@ -124,24 +117,22 @@ class TripodOrchestrator:
                             "------------------------\n"
                         )
             case "evaluate":
-                self.evaluate_system()
+                self.evaluate_stub()
             case _:
                 raise ValueError(f"Unsupported mode: {mode}")
 
-    def evaluate_system(self):
+    def evaluate_stub(self):
         """
-        Runs the full loop against the test set defined in config.
+        Stub for evaluation loops against the test set defined in config.
         """
         test_path = self.config.evaluation.test_set_path
         logger.info("Loading test set from %s", test_path)
-        logger.info("Running evaluation loop (placeholder).")
-        # Loop through test set -> Inference -> Compare with Ground Truth -> Calculate Metrics
+        logger.info("Running evaluation loop (stub).")
 
 
 if __name__ == "__main__":
     tripod = TripodOrchestrator(DEFAULT_CONFIG_PATH)
 
-    # Example inference payload
     dummy_sensor = {"temp": 78.5, "vibration": 1.2, "status": "warning"}
     tripod.execute(
         "inference",

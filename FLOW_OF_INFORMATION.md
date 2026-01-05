@@ -6,31 +6,31 @@ This document expands the README flow section and clarifies how the legs connect
 
 ```mermaid
 flowchart TD
-  Dataset[Train examples] --> RAG[RAGLeg training]
-  RAG --> SFT[Build SFT text]
+  Dataset[Train examples] --> RAFT[RAFT retrieval]
+  RAFT --> SFT[Build SFT text]
   SFT --> Train[TrainingLeg LoRA/QLoRA]
   Train --> Adapter[Adapter output]
 ```
 
-- In `scripts/e2e_smoke.py`, RAG is used to enrich each training example before SFT when `rag.training.enabled` is true.
-- `training.hyperparameters.response_marker` and `training.hyperparameters.mask_prompt` control how prompt tokens are masked during loss.
+- In `tests/smoke_e2e.py`, RAFT (training-time retrieval) enriches each training example before SFT when `raft.enabled` is true.
+- `training.hyperparameters.response_marker` and `training.hyperparameters.mask_prompt` control loss masking: the prompt portion is ignored in the labels (`-100`) so only the completion contributes to loss (attention still sees the full prompt).
 - Training is offline; it is not interleaved with inference.
 
 ## Inference path (TripodOrchestrator.execute("inference"))
 
 ```mermaid
 flowchart LR
-  Input[Input payload] --> RAG[RAGLeg inference]
+  Input[Input payload] --> RAG[RAG retrieval]
   RAG --> Prompt[PromptLeg raw or dspy]
   Prompt --> Output[Prompt text or prediction]
 ```
 
-- `rag.inference.enabled: false` makes `RAGLeg.run` return an empty context string.
+- `rag.enabled: false` makes `RAGLeg.run` return an empty context string.
 - `prompting.backend: raw` returns a rendered prompt string.
 - `prompting.backend: dspy` returns a DSPy prediction string (requires `dspy.settings.configure(lm=...)`).
-- `main.py` does not call an LLM; it prints the prompt or DSPy output as a placeholder.
+- `main.py` does not call an LLM; it prints the prompt or DSPy output as a stub.
 
-## Evaluation path (scripts/e2e_smoke.py)
+## Evaluation path (tests/smoke_e2e.py)
 
 ```mermaid
 flowchart LR
@@ -41,15 +41,16 @@ flowchart LR
 ```
 
 - Pass naming and metrics are defined by the evaluation script and are task-specific.
+- When `raft.enabled` is true, the smoke script trains both no-RAFT and RAFT adapters and evaluates each under the same inference-time RAG toggle.
 - `--holdout-policies` makes test policy IDs unseen in training, which increases reliance on retrieval.
 
-## RAG leg
+## RAFT and RAG
 
-### When RAG is applied
+### When retrieval is applied
 
-- Training-time RAG: used when building training examples (for example in `scripts/e2e_smoke.py`) by retrieving context and embedding it in each example before SFT.
-- Inference-time RAG: used at prompt construction time in `TripodOrchestrator.execute("inference", ...)` and in the smoke evaluation loops.
-- The benchmark "with_rag" vs "without_rag" is always an inference-time toggle. Training may still include RAG-enriched examples depending on `rag.training.enabled`.
+- **RAFT (training-time retrieval)**: used when building training examples (for example in `tests/smoke_e2e.py`) by retrieving text and concatenating it into each example before SFT.
+- **RAG (inference-time retrieval)**: used at prompt construction time in `TripodOrchestrator.execute("inference", ...)` and in the smoke evaluation loops.
+- The benchmark "with_rag" vs "without_rag" is always an inference-time toggle. RAFT vs no-RAFT tuning is controlled by `raft.enabled` and reflected in the tuned pass names.
 
 ## Branchouts and feature flags
 
@@ -57,18 +58,14 @@ flowchart LR
 
 - `training.enabled`: skip training entirely when false.
 - `training.hyperparameters.response_marker` and `training.hyperparameters.mask_prompt`: SFT prompt/completion masking.
-- `rag.training.enabled` / `rag.inference.enabled`: skip ingestion and return empty context when false.
-- `rag.training.retrieval.top_k` / `rag.inference.retrieval.top_k` and `rag.*.retrieval.strategy`: affect retrieval behavior.
+- `raft.enabled` / `rag.enabled`: skip ingestion and return empty context when false.
+- `raft.retrieval.top_k` / `rag.retrieval.top_k` and `raft.retrieval.strategy` / `rag.retrieval.strategy`: affect retrieval behavior.
 - `prompting.backend`: `raw` (rendered prompt) vs `dspy` (DSPy program output).
 - `prompting.dspy.include_user_prompt`, `prompting.dspy.chain_of_thought`, `prompting.dspy.output_field`: DSPy behavior switches.
 
 ### Script flags (smoke)
 
-- `scripts/e2e_smoke.py`: `--holdout-policies`, `--save-predictions`, `--eval-samples`, `--report-dir`, `--n`, `--num-policies`, `--train-policy-ratio`, `--test-ratio`, `--seed`.
-- `scripts/generate_smoke_dataset.py`: `--holdout-policies` controls train/test policy ID overlap in the synthetic dataset.
+- `tests/smoke_e2e.py`: `--holdout-policies`, `--save-predictions`, `--eval-samples`, `--report-dir`, `--n`, `--num-policies`, `--train-policy-ratio`, `--test-ratio`, `--seed`.
+- `tests/generate_smoke_dataset.py`: `--holdout-policies` controls train/test policy ID overlap in the synthetic dataset.
 
-### Notes on implementation coverage
-
-- `prompting.few_shot` is not used by `core/prompting.py`; few-shot usage appears in `scripts/smoke_cross_section.py` only.
-- `rag.*.retrieval.score_threshold`, `rag.*.retrieval.reranking`, and `rag.*.ingestion.chunk_size/chunk_overlap` are present in `configs/iot_domain_config.yaml` but are not wired in `core/rag.py`.
-- `TripodOrchestrator.evaluate` is a placeholder; the real end-to-end evaluation is in `scripts/e2e_smoke.py`.
+For config-to-runtime details, see `configs/README.md`.

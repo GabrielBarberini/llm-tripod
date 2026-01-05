@@ -28,7 +28,6 @@ class TrainingLeg(BaseLeg):
             case True:
                 pass
 
-        # Lazy imports: these are heavy and only needed on training nodes.
         from datasets import load_dataset
         import torch
         from peft import (
@@ -118,8 +117,7 @@ class TrainingLeg(BaseLeg):
         ]
 
         def to_text(row):
-            # Accept either {"text": "..."} or our smoke format:
-            # {"domain","device_profile","sensor_data","rag_context","expected":{...}}
+            """Normalize text rows and smoke-format rows into SFT strings."""
             match row:
                 case {"text": str() as text}:
                     return {"text": text}
@@ -166,7 +164,7 @@ class TrainingLeg(BaseLeg):
         )
 
         def _encode_one(text: str):
-            # Optional prompt/completion split for SFT-style training.
+            """Tokenize and optionally mask the prompt portion."""
             marker_idx = text.find(response_marker) if response_marker else -1
             has_marker = marker_idx >= 0
             do_mask = bool(mask_prompt and has_marker)
@@ -198,7 +196,6 @@ class TrainingLeg(BaseLeg):
                 )
 
             if len(completion_ids) > max_body:
-                # Keep the tail so the model still learns the end of the completion.
                 completion_ids = completion_ids[-max_body:]
                 prompt_ids = []
             else:
@@ -218,7 +215,6 @@ class TrainingLeg(BaseLeg):
             else:
                 labels = input_ids.copy()
 
-            # Pad to max_len and ensure padding tokens do not contribute to loss.
             pad_n = max_len - len(input_ids)
             if pad_n > 0:
                 input_ids = input_ids + ([pad_id] * pad_n)

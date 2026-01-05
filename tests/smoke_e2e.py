@@ -1,14 +1,14 @@
 """
-End-to-end smoke test: Training (LoRA/QLoRA) + RAG + Prompting + Evaluation.
+End-to-end smoke test: Training (LoRA/QLoRA) + RAFT + RAG + Prompting + Evaluation.
 
 Designed to run on a GPU training node (e.g., RunPod).
 
 Flow:
 1) Generate synthetic dataset + RAG docs.
 2) Ingest RAG docs into local vector store.
-3) Build a training file with retrieved RAG context when rag.training.enabled is true.
-4) Train a LoRA adapter on TinyLlama (4-bit if CUDA).
-5) Evaluate on the held-out set with two modes (rag.inference on/off):
+3) Build training files with and without RAFT retrieval (gated by raft.enabled).
+4) Train LoRA adapters for no-RAFT and RAFT (if enabled).
+5) Evaluate on the held-out set with two modes (rag.enabled on/off):
    - with RAG context in the prompt
    - without RAG context (ablation)
 """
@@ -41,7 +41,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger("E2ESmoke")
+logger = logging.getLogger("SmokeE2E")
 
 
 SMOKE_DIR = ROOT / "training_data" / "smoke"
@@ -124,7 +124,7 @@ def build_query(example: dict[str, Any]) -> str:
 
 
 def parse_action(generated: str) -> tuple[str, dict[str, Any]]:
-    # Try to parse JSON in the output; fall back to empty.
+    """Parse action and parameters from model output."""
     try:
         start = generated.find("{")
         end = generated.rfind("}")
@@ -146,6 +146,30 @@ def _build_rag_context(rag: RAGLeg, row: dict[str, Any]) -> str:
     )
     heur_ctx = rag.run(query=build_query(row), filters={"type": "heuristic"})
     return "\n".join([c for c in [policy_ctx, heur_ctx] if c]).strip()
+
+
+def _build_train_text_rows(
+    prompter: PromptLeg,
+    rag: RAGLeg,
+    rows: list[dict[str, Any]],
+    include_rag: bool,
+) -> list[dict[str, str]]:
+    train_text_rows = []
+    for row in rows:
+        ctx = _build_rag_context(rag, row) if include_rag else ""
+        prompt = prompter.render_prompt(
+            {
+                "domain": row["domain"],
+                "rag_context": ctx,
+                "sensor_data": {
+                    "policy_id": row["policy_id"],
+                    **row["sensor_data"],
+                },
+            }
+        )
+        target = json.dumps(row["expected"], ensure_ascii=False)
+        train_text_rows.append({"text": f"{prompt}\nASSISTANT:\n{target}"})
+    return train_text_rows
 
 
 def _ingest_rag_docs(rags: list[RAGLeg], docs: list[dict[str, Any]]) -> None:
@@ -227,7 +251,6 @@ def _env_info() -> dict[str, Any]:
         "platform": platform.platform(),
     }
 
-    # Package versions (best-effort)
     for pkg in [
         "torch",
         "transformers",
@@ -239,7 +262,6 @@ def _env_info() -> dict[str, Any]:
     ]:
         info[pkg] = _safe_version(pkg)
 
-    # CUDA/GPU details (best-effort)
     try:
         import torch
 
@@ -281,10 +303,10 @@ def _write_markdown(path: Path, report: dict[str, Any]):
         f"- Args: `--n {report.get('args', {}).get('n')} --eval-samples {report.get('args', {}).get('eval_samples')}`"
     )
     lines.append(
-        f"- RAG training enabled: `{report.get('rag', {}).get('training_enabled')}`"
+        f"- RAFT enabled: `{report.get('retrieval', {}).get('raft_enabled')}`"
     )
     lines.append(
-        f"- RAG inference enabled: `{report.get('rag', {}).get('inference_enabled')}`"
+        f"- RAG enabled: `{report.get('retrieval', {}).get('rag_enabled')}`"
     )
     lines.append("")
     lines.append("## Metrics")
@@ -305,8 +327,10 @@ def _write_markdown(path: Path, report: dict[str, Any]):
     for key in [
         "base_with_rag",
         "base_without_rag",
-        "tuned_with_rag",
-        "tuned_without_rag",
+        "tuned_no_raft_with_rag",
+        "tuned_no_raft_without_rag",
+        "tuned_raft_with_rag",
+        "tuned_raft_without_rag",
     ]:
         if key in metrics:
             lines.append(_row(key, metrics[key]))
@@ -320,6 +344,23 @@ def _write_markdown(path: Path, report: dict[str, Any]):
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+
+
+def _metric_delta(
+    metrics: dict[str, dict[str, Any]],
+    left: str,
+    right: str,
+    key: str,
+) -> float | None:
+    match (metrics.get(left), metrics.get(right)):
+        case (dict() as left_map, dict() as right_map):
+            left_val = left_map.get(key)
+            right_val = right_map.get(key)
+            if isinstance(left_val, (int, float)) and isinstance(
+                right_val, (int, float)
+            ):
+                return float(left_val) - float(right_val)
+    return None
 
 
 def load_llm(model_id: str, adapter_dir: Path | None):
@@ -355,11 +396,19 @@ def evaluate(
     rag: RAGLeg,
     test_rows: list[dict[str, Any]],
     use_rag: bool,
+    generation: dict[str, Any] | None = None,
     max_samples: int = 0,
     predictions_path: Path | None = None,
     pass_name: str = "",
 ) -> dict[str, float | int]:
     import torch
+
+    gen_cfg = dict(generation or {})
+    top_p = float(gen_cfg.get("top_p", 1.0))
+    if "do_sample" in gen_cfg:
+        do_sample = bool(gen_cfg["do_sample"])
+    else:
+        do_sample = top_p < 1.0
 
     if max_samples and max_samples > 0:
         test_rows = test_rows[:max_samples]
@@ -396,9 +445,10 @@ def evaluate(
         out = model.generate(
             **inputs,
             max_new_tokens=96,
-            do_sample=False,
+            do_sample=do_sample,
             num_beams=1,
             repetition_penalty=1.1,
+            top_p=top_p,
             pad_token_id=tokenizer.eos_token_id,
         )
         gen = tokenizer.decode(
@@ -414,7 +464,6 @@ def evaluate(
         if action_ok:
             action_hits += 1
 
-        # Parameter match (only counted when action matches)
         params_ok = False
         if action_ok and isinstance(params, dict):
             fan_pred = _num(params.get("fan_speed"))
@@ -509,14 +558,13 @@ def main():
     }
     _write_json(report_dir / "summary.json", report)
 
-    # 1) Generate dataset/docs
     import subprocess
 
     SMOKE_DIR.mkdir(parents=True, exist_ok=True)
     subprocess.check_call(
         [
             "python",
-            str(ROOT / "scripts" / "generate_smoke_dataset.py"),
+            str(ROOT / "tests" / "generate_smoke_dataset.py"),
             "--out-dir",
             str(SMOKE_DIR),
             "--n",
@@ -548,7 +596,6 @@ def main():
     )
     _write_json(report_dir / "summary.json", report)
 
-    # Attach metadata for filtering: policies include policy_id; heuristics are shared.
     docs_for_ingest = []
     for d in rag_docs:
         md = {"id": d["id"], "type": d.get("type", "doc")}
@@ -556,7 +603,6 @@ def main():
             md["policy_id"] = d["policy_id"]
         docs_for_ingest.append({"id": d["id"], "text": d["text"], **md})
 
-    # 2) Load config and init legs
     if not SMOKE_CONFIG.exists():
         raise FileNotFoundError(f"Missing config at {SMOKE_CONFIG}")
     raw_cfg = yaml.safe_load(SMOKE_CONFIG.read_text(encoding="utf-8"))
@@ -569,138 +615,145 @@ def main():
         SMOKE_CONFIG.read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    rag_training = RAGLeg(cfg.rag.training)
-    rag_inference = RAGLeg(cfg.rag.inference)
+    raft = RAGLeg(cfg.raft)
+    rag = RAGLeg(cfg.rag)
     prompter = PromptLeg(cfg.prompting)
     trainer = TrainingLeg(cfg.training)
     report["paths"].update(
         {
-            "training_vectordb_path": str(cfg.rag.training.vector_db_path),
-            "inference_vectordb_path": str(cfg.rag.inference.vector_db_path),
-            "adapter_output_dir": str(cfg.training.adapter_output_dir),
+            "raft_vectordb_path": str(cfg.raft.vector_db_path),
+            "rag_vectordb_path": str(cfg.rag.vector_db_path),
             "base_model": str(cfg.training.base_model),
         }
     )
-    report["rag"] = {
-        "training_enabled": bool(cfg.rag.training.enabled),
-        "inference_enabled": bool(cfg.rag.inference.enabled),
+    report["retrieval"] = {
+        "raft_enabled": bool(cfg.raft.enabled),
+        "rag_enabled": bool(cfg.rag.enabled),
     }
     _write_json(report_dir / "summary.json", report)
 
-    # 3) Ingest RAG docs
-    _ingest_rag_docs([rag_training, rag_inference], docs_for_ingest)
+    _ingest_rag_docs([raft, rag], docs_for_ingest)
 
-    # 4) Build a training file (prompt + target) with per-example retrieved context
     train_rows = read_jsonl(SMOKE_DIR / "train.jsonl")
     test_rows = read_jsonl(SMOKE_DIR / "test.jsonl")
 
-    train_text_rows = []
-    for row in train_rows:
-        ctx = _build_rag_context(rag_training, row)
-        prompt = prompter.render_prompt(
-            {
-                "domain": row["domain"],
-                "rag_context": ctx,
-                "sensor_data": {
-                    "policy_id": row["policy_id"],
-                    **row["sensor_data"],
-                },
-            }
+    train_text_no_raft_path = SMOKE_DIR / "train_text_no_raft.jsonl"
+    train_text_no_raft_rows = _build_train_text_rows(
+        prompter, raft, train_rows, include_rag=False
+    )
+    write_jsonl(train_text_no_raft_path, train_text_no_raft_rows)
+    report["paths"]["train_text_no_raft_jsonl"] = str(train_text_no_raft_path)
+
+    train_text_raft_path: Path | None = None
+    if cfg.raft.enabled:
+        train_text_raft_path = SMOKE_DIR / "train_text_raft.jsonl"
+        train_text_raft_rows = _build_train_text_rows(
+            prompter, raft, train_rows, include_rag=True
         )
-        target = json.dumps(row["expected"], ensure_ascii=False)
-        train_text_rows.append({"text": f"{prompt}\nASSISTANT:\n{target}"})
+        write_jsonl(train_text_raft_path, train_text_raft_rows)
+        report["paths"]["train_text_raft_jsonl"] = str(train_text_raft_path)
 
-    train_text_path = SMOKE_DIR / "train_text.jsonl"
-    write_jsonl(train_text_path, train_text_rows)
-    report["paths"]["train_text_jsonl"] = str(train_text_path)
     _write_json(report_dir / "summary.json", report)
 
-    # 5) Train adapter
-    cfg.training.dataset_path = str(train_text_path)
-    t0 = time.time()
-    trainer.run()
-    report["training"] = {"duration_s": time.time() - t0}
+    adapter_base_dir = Path(cfg.training.adapter_output_dir)
+    adapter_no_raft_dir = adapter_base_dir.with_name(
+        f"{adapter_base_dir.name}_no_raft"
+    )
+    adapter_raft_dir = adapter_base_dir.with_name(
+        f"{adapter_base_dir.name}_raft"
+    )
+    report["paths"]["adapter_output_dir_base"] = str(adapter_base_dir)
+    report["paths"]["adapter_output_dir_no_raft"] = str(adapter_no_raft_dir)
+    if cfg.raft.enabled:
+        report["paths"]["adapter_output_dir_raft"] = str(adapter_raft_dir)
     _write_json(report_dir / "summary.json", report)
 
-    adapter_dir = Path(cfg.training.adapter_output_dir)
+    def run_training(dataset_path: Path, adapter_dir: Path) -> float:
+        cfg.training.dataset_path = str(dataset_path)
+        cfg.training.adapter_output_dir = str(adapter_dir)
+        t0 = time.time()
+        trainer.run()
+        return time.time() - t0
 
-    # 6) Evaluate with and without RAG
-    base_model, base_tok = load_llm(cfg.training.base_model, None)
-    tuned_model, tuned_tok = load_llm(cfg.training.base_model, adapter_dir)
+    training_report: dict[str, Any] = {}
+    training_report["no_raft"] = {
+        "dataset_path": str(train_text_no_raft_path),
+        "adapter_dir": str(adapter_no_raft_dir),
+        "duration_s": run_training(
+            train_text_no_raft_path, adapter_no_raft_dir
+        ),
+    }
+    if cfg.raft.enabled and train_text_raft_path is not None:
+        training_report["raft"] = {
+            "dataset_path": str(train_text_raft_path),
+            "adapter_dir": str(adapter_raft_dir),
+            "duration_s": run_training(train_text_raft_path, adapter_raft_dir),
+        }
+
+    report["training"] = training_report
+    _write_json(report_dir / "summary.json", report)
+
+    gen_settings = dict(cfg.evaluation.generation or {})
+    report["generation"] = gen_settings
+    _write_json(report_dir / "summary.json", report)
 
     preds_dir = report_dir / "predictions"
 
-    base_with = evaluate(
-        base_model,
-        base_tok,
-        prompter,
-        rag_inference,
-        test_rows,
-        use_rag=True,
-        max_samples=args.eval_samples,
-        predictions_path=(
-            (preds_dir / "base_with_rag.jsonl")
-            if args.save_predictions
-            else None
-        ),
-        pass_name="base_with_rag",
-    )
-    report["metrics"]["base_with_rag"] = base_with
-    _write_json(report_dir / "summary.json", report)
+    def run_eval(
+        model, tokenizer, use_rag: bool, pass_name: str
+    ) -> dict[str, Any]:
+        metrics = evaluate(
+            model,
+            tokenizer,
+            prompter,
+            rag,
+            test_rows,
+            use_rag=use_rag,
+            generation=gen_settings,
+            max_samples=args.eval_samples,
+            predictions_path=(
+                (preds_dir / f"{pass_name}.jsonl")
+                if args.save_predictions
+                else None
+            ),
+            pass_name=pass_name,
+        )
+        report["metrics"][pass_name] = metrics
+        _write_json(report_dir / "summary.json", report)
+        return metrics
 
-    base_without = evaluate(
-        base_model,
-        base_tok,
-        prompter,
-        rag_inference,
-        test_rows,
-        use_rag=False,
-        max_samples=args.eval_samples,
-        predictions_path=(
-            (preds_dir / "base_without_rag.jsonl")
-            if args.save_predictions
-            else None
-        ),
-        pass_name="base_without_rag",
-    )
-    report["metrics"]["base_without_rag"] = base_without
-    _write_json(report_dir / "summary.json", report)
+    base_model, base_tok = load_llm(cfg.training.base_model, None)
+    base_with = run_eval(base_model, base_tok, True, "base_with_rag")
+    base_without = run_eval(base_model, base_tok, False, "base_without_rag")
 
-    tuned_with = evaluate(
-        tuned_model,
-        tuned_tok,
-        prompter,
-        rag_inference,
-        test_rows,
-        use_rag=True,
-        max_samples=args.eval_samples,
-        predictions_path=(
-            (preds_dir / "tuned_with_rag.jsonl")
-            if args.save_predictions
-            else None
-        ),
-        pass_name="tuned_with_rag",
+    tuned_no_raft_model, tuned_no_raft_tok = load_llm(
+        cfg.training.base_model, adapter_no_raft_dir
     )
-    report["metrics"]["tuned_with_rag"] = tuned_with
-    _write_json(report_dir / "summary.json", report)
+    tuned_no_raft_with = run_eval(
+        tuned_no_raft_model, tuned_no_raft_tok, True, "tuned_no_raft_with_rag"
+    )
+    tuned_no_raft_without = run_eval(
+        tuned_no_raft_model,
+        tuned_no_raft_tok,
+        False,
+        "tuned_no_raft_without_rag",
+    )
 
-    tuned_without = evaluate(
-        tuned_model,
-        tuned_tok,
-        prompter,
-        rag_inference,
-        test_rows,
-        use_rag=False,
-        max_samples=args.eval_samples,
-        predictions_path=(
-            (preds_dir / "tuned_without_rag.jsonl")
-            if args.save_predictions
-            else None
-        ),
-        pass_name="tuned_without_rag",
-    )
-    report["metrics"]["tuned_without_rag"] = tuned_without
-    _write_json(report_dir / "summary.json", report)
+    tuned_raft_with: dict[str, Any] | None = None
+    tuned_raft_without: dict[str, Any] | None = None
+    if cfg.raft.enabled:
+        tuned_raft_model, tuned_raft_tok = load_llm(
+            cfg.training.base_model, adapter_raft_dir
+        )
+        tuned_raft_with = run_eval(
+            tuned_raft_model, tuned_raft_tok, True, "tuned_raft_with_rag"
+        )
+        tuned_raft_without = run_eval(
+            tuned_raft_model,
+            tuned_raft_tok,
+            False,
+            "tuned_raft_without_rag",
+        )
 
     logger.info(
         "Base  +RAG: action=%.3f param=%.3f thermal_param=%.3f",
@@ -715,28 +768,100 @@ def main():
         base_without["thermal_param_accuracy"],
     )
     logger.info(
-        "Tuned +RAG: action=%.3f param=%.3f thermal_param=%.3f",
-        tuned_with["action_accuracy"],
-        tuned_with["param_accuracy"],
-        tuned_with["thermal_param_accuracy"],
+        "Tuned (no RAFT) +RAG: action=%.3f param=%.3f thermal_param=%.3f",
+        tuned_no_raft_with["action_accuracy"],
+        tuned_no_raft_with["param_accuracy"],
+        tuned_no_raft_with["thermal_param_accuracy"],
     )
     logger.info(
-        "Tuned -RAG: action=%.3f param=%.3f thermal_param=%.3f",
-        tuned_without["action_accuracy"],
-        tuned_without["param_accuracy"],
-        tuned_without["thermal_param_accuracy"],
+        "Tuned (no RAFT) -RAG: action=%.3f param=%.3f thermal_param=%.3f",
+        tuned_no_raft_without["action_accuracy"],
+        tuned_no_raft_without["param_accuracy"],
+        tuned_no_raft_without["thermal_param_accuracy"],
     )
+    if tuned_raft_with is not None and tuned_raft_without is not None:
+        logger.info(
+            "Tuned (RAFT) +RAG: action=%.3f param=%.3f thermal_param=%.3f",
+            tuned_raft_with["action_accuracy"],
+            tuned_raft_with["param_accuracy"],
+            tuned_raft_with["thermal_param_accuracy"],
+        )
+        logger.info(
+            "Tuned (RAFT) -RAG: action=%.3f param=%.3f thermal_param=%.3f",
+            tuned_raft_without["action_accuracy"],
+            tuned_raft_without["param_accuracy"],
+            tuned_raft_without["thermal_param_accuracy"],
+        )
 
-    report["deltas"] = {
-        "rag_lift_base_param_accuracy": base_with["param_accuracy"]
-        - base_without["param_accuracy"],
-        "rag_lift_tuned_param_accuracy": tuned_with["param_accuracy"]
-        - tuned_without["param_accuracy"],
-        "tune_gain_with_rag_param_accuracy": tuned_with["param_accuracy"]
-        - base_with["param_accuracy"],
-        "tune_gain_without_rag_param_accuracy": tuned_without["param_accuracy"]
-        - base_without["param_accuracy"],
-    }
+    metrics = report["metrics"]
+    delta_defs = [
+        (
+            "rag_lift_base_param_accuracy",
+            "base_with_rag",
+            "base_without_rag",
+            "param_accuracy",
+        ),
+        (
+            "rag_lift_tuned_no_raft_param_accuracy",
+            "tuned_no_raft_with_rag",
+            "tuned_no_raft_without_rag",
+            "param_accuracy",
+        ),
+        (
+            "tune_gain_no_raft_with_rag_param_accuracy",
+            "tuned_no_raft_with_rag",
+            "base_with_rag",
+            "param_accuracy",
+        ),
+        (
+            "tune_gain_no_raft_without_rag_param_accuracy",
+            "tuned_no_raft_without_rag",
+            "base_without_rag",
+            "param_accuracy",
+        ),
+    ]
+    if cfg.raft.enabled:
+        delta_defs.extend(
+            [
+                (
+                    "rag_lift_tuned_raft_param_accuracy",
+                    "tuned_raft_with_rag",
+                    "tuned_raft_without_rag",
+                    "param_accuracy",
+                ),
+                (
+                    "tune_gain_raft_with_rag_param_accuracy",
+                    "tuned_raft_with_rag",
+                    "base_with_rag",
+                    "param_accuracy",
+                ),
+                (
+                    "tune_gain_raft_without_rag_param_accuracy",
+                    "tuned_raft_without_rag",
+                    "base_without_rag",
+                    "param_accuracy",
+                ),
+                (
+                    "raft_lift_with_rag_param_accuracy",
+                    "tuned_raft_with_rag",
+                    "tuned_no_raft_with_rag",
+                    "param_accuracy",
+                ),
+                (
+                    "raft_lift_without_rag_param_accuracy",
+                    "tuned_raft_without_rag",
+                    "tuned_no_raft_without_rag",
+                    "param_accuracy",
+                ),
+            ]
+        )
+
+    deltas: dict[str, float] = {}
+    for name, left, right, key in delta_defs:
+        delta = _metric_delta(metrics, left, right, key)
+        if delta is not None:
+            deltas[name] = delta
+    report["deltas"] = deltas
     _write_json(report_dir / "summary.json", report)
     _write_markdown(report_dir / "summary.md", report)
     logger.info("Report saved: %s", report_dir)

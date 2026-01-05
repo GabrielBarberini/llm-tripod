@@ -41,14 +41,6 @@ class RAGConfig(BaseModel):
         extra = "ignore"
 
 
-class RAGModesConfig(BaseModel):
-    training: RAGConfig
-    inference: RAGConfig
-
-    class Config:
-        extra = "ignore"
-
-
 class DSPyConfig(BaseModel):
     instructions: str | None = None
     include_user_prompt: bool = True
@@ -75,6 +67,7 @@ class PromptingConfig(BaseModel):
 class EvaluationConfig(BaseModel):
     test_set_path: str
     metrics: list[str]
+    generation: dict[str, Any] | None = None
 
     class Config:
         extra = "ignore"
@@ -84,7 +77,8 @@ class TripodConfig(BaseModel):
     experiment_name: str
     output_dir: str
     training: TrainingConfig
-    rag: RAGModesConfig
+    rag: RAGConfig
+    raft: RAGConfig
     prompting: PromptingConfig
     evaluation: EvaluationConfig
 
@@ -93,16 +87,23 @@ class TripodConfig(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _coerce_rag_modes(cls, data: Any) -> Any:
+    def _coerce_retrieval_configs(cls, data: Any) -> Any:
         match data:
-            case {"rag": {"training": _, "inference": _}}:
-                return data
+            case {
+                "rag": {
+                    "training": dict() as training,
+                    "inference": dict() as inference,
+                },
+                **rest,
+            }:
+                return {**rest, "rag": inference, "raft": training}
             case {"rag": {"training": dict() as training} as rag, **rest} if (
                 "inference" not in rag
             ):
                 return {
                     **rest,
-                    "rag": {"training": training, "inference": training},
+                    "rag": training,
+                    "raft": training,
                 }
             case {
                 "rag": {"inference": dict() as inference} as rag,
@@ -110,9 +111,14 @@ class TripodConfig(BaseModel):
             } if ("training" not in rag):
                 return {
                     **rest,
-                    "rag": {"training": inference, "inference": inference},
+                    "rag": inference,
+                    "raft": inference,
                 }
-            case {"rag": dict() as rag, **rest}:
-                return {**rest, "rag": {"training": rag, "inference": rag}}
+            case {"rag": dict() as rag, "raft": dict() as raft, **rest}:
+                return {**rest, "rag": rag, "raft": raft}
+            case {"rag": dict() as rag, **rest} if "raft" not in data:
+                return {**rest, "rag": rag, "raft": rag}
+            case {"raft": dict() as raft, **rest} if "rag" not in data:
+                return {**rest, "rag": raft, "raft": raft}
             case _:
                 return data

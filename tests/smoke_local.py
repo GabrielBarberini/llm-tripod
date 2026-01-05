@@ -1,5 +1,5 @@
 """
-Cross-sectional smoke test for the Tripod framework.
+Local smoke test for the Tripod framework.
 
 What it does:
 - Builds a tiny local "vector DB" of heuristics (sentence-transformer embeddings).
@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-os.environ["PYTORCH_MPS_ENABLED"] = "0"  # Force CPU to avoid MPS OOM on macOS.
+os.environ["PYTORCH_MPS_ENABLED"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["OMP_NUM_THREADS"] = "1"
 
@@ -40,17 +40,15 @@ from transformers import (
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger("SmokeTest")
+logger = logging.getLogger("SmokeLocal")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 VECTOR_DIR = BASE_DIR / "training_data" / "vectordb"
 VECTOR_DIR.mkdir(parents=True, exist_ok=True)
-DEVICE = torch.device(
-    "cpu"
-)  # Keep smoke test consistent across machines (avoid MPS quirks).
+DEVICE = torch.device("cpu")
 BASE_MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 CPU_FALLBACK_MODEL_ID = "sshleifer/tiny-gpt2"
-USE_4BIT = True  # Attempt 4-bit when CUDA + bitsandbytes are available; fallback otherwise.
+USE_4BIT = True
 GEN_MAX_NEW_TOKENS = 24
 GEN_NUM_BEAMS = 1
 GEN_DO_SAMPLE = False
@@ -116,8 +114,8 @@ DUMMY_SAMPLES: list[dict[str, Any]] = [
     },
 ]
 
-AUG_FACTOR = 2  # Replicate dummy samples; keep small for CPU fallback.
-MAX_CORPUS = 40  # Cap total samples to keep smoke test tractable.
+AUG_FACTOR = 2
+MAX_CORPUS = 40
 
 FEW_SHOTS = [
     {
@@ -274,7 +272,7 @@ def train_model(train_ds: Dataset, tokenizer: AutoTokenizer):
                 "bitsandbytes not available; falling back to fp16 on CPU."
             )
     else:
-        effective_model_id = CPU_FALLBACK_MODEL_ID  # Smaller fallback for CPU-only environments.
+        effective_model_id = CPU_FALLBACK_MODEL_ID
         per_device_bs = 1
         num_epochs = 1
         logger.info(
@@ -354,7 +352,6 @@ def evaluate(
             outputs[0][input_ids.shape[1] :], skip_special_tokens=True
         ).strip()
         expected = sample["action"]
-        # Loose match: check if primary verb from expected is present.
         matched = (
             expected.split(";")[0].split(":")[0].strip().lower()
             in generated.lower()
