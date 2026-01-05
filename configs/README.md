@@ -1,24 +1,24 @@
 # Configs
 
-This folder contains YAML configs used by Tripod and the bundled smoke pipeline.
-The schema is shared between configs; fields listed below map to runtime behavior.
+This folder contains YAML configs used by Tripod and the bundled smoke tests.
+The sections below explain what each config block does and where it is used.
 Legacy configs that use `rag.training` / `rag.inference` are coerced to `raft` and
 `rag` at load time for compatibility.
 
 ## Files
 
-- `configs/smoke_config.yaml`: end-to-end smoke test config used by
+- `configs/smoke_e2e_config.yaml`: end-to-end smoke test config used by
   `tests/smoke_e2e.py`.
-- `configs/iot_domain_config.yaml`: example template for a real deployment
+- `configs/iot_domain_config.yaml`: example production config
   (treat as inspiration and replace paths/values).
 
-## Schema map (what runs where)
+## What each section controls
 
 ### `training.*` (core/training.py)
 
 - `training.enabled`: skip adapter training when false.
 - `training.base_model`: base checkpoint loaded by the trainer and evaluator.
-- `training.dataset_path`: training JSON/JSONL/text path (the smoke script
+- `training.dataset_path`: training JSON/JSONL/text path (the smoke test
   overwrites this with its generated dataset paths).
 - `training.adapter_output_dir`: output directory for LoRA/QLoRA adapters.
 - `training.hyperparameters.response_marker`: delimiter that splits prompt vs

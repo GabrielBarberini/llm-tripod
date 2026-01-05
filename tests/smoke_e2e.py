@@ -45,7 +45,7 @@ logger = logging.getLogger("SmokeE2E")
 
 
 SMOKE_DIR = ROOT / "training_data" / "smoke"
-SMOKE_CONFIG = ROOT / "configs" / "smoke_config.yaml"
+SMOKE_CONFIG = ROOT / "configs" / "smoke_e2e_config.yaml"
 DEFAULT_REPORTS_DIR = SMOKE_DIR / "reports"
 
 

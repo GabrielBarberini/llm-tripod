@@ -11,12 +11,12 @@ Use it to run repeatable end-to-end experiments and iterate on **data, retrieval
 ## Repository Structure
 
 - `core/`: implementations for `TrainingLeg`, `RAGLeg`, `PromptLeg`, plus config models.
-- `configs/`: YAML configs (put hardcoded values and YAML knobs here).
-  - `configs/smoke_config.yaml`: end-to-end smoke test config.
-  - `configs/iot_domain_config.yaml`: example config (IoT-themed; treat as inspiration).
-  - `configs/README.md`: config-to-runtime mapping.
-- `tests/`: smoke tests + data generation, plus `tests/README.md` for smoke-test metrics.
-- `pipelines/`: example pipelines and walkthroughs for adapting Tripod to a domain.
+- `configs/`: YAML configs.
+  - `configs/smoke_e2e_config.yaml`: end-to-end smoke test config.
+  - `configs/iot_domain_config.yaml`: example production config (IoT-themed; treat as inspiration).
+  - `configs/README.md`: explains each config section and how it is used at runtime.
+- `tests/`: test scripts to validate modules and integrations; see `tests/README.md`.
+- `pipelines/`: example Tripod pipelines to use as a reference for extension.
 - `training_data/`: local data/artifacts; see `training_data/README.md` for layout guidance.
 - `main.py`: `TripodOrchestrator` entry point.
 
@@ -47,9 +47,8 @@ flowchart TD
 ```
 
 - Runs **in phases**: ingest → build training file → train.
-- The smoke test uses a response delimiter `ASSISTANT:` and masks the prompt tokens during training (completion-style SFT).
-- The SFT text combines prompt and target (`PROMPT + ASSISTANT + TARGET`).
-- In the smoke pipeline (`tests/smoke_e2e.py`), RAFT enrichment happens when building the training file; if `raft.enabled` is false or ingestion is skipped, training examples get empty context.
+- In the end-to-end smoke test (`tests/smoke_e2e.py`), the SFT text is built as `PROMPT + ASSISTANT + TARGET` and the `ASSISTANT:` delimiter is used to mask prompt tokens during training (completion-style SFT).
+- RAFT enrichment happens during training-file construction when `raft.enabled` is true; if it is false or ingestion is skipped, training examples get empty context.
 
 ### Inference
 
@@ -117,14 +116,14 @@ dspy.settings.configure(lm=...)
 
 Tripod will return the DSPy prediction string. Use `prompting.backend: "raw"` for prompt-only rendering.
 
-### Smoke tests (recommended)
+### Integration smoke test
 
 ```bash
 python3 tests/smoke_e2e.py --n 6000 --eval-samples 200
 ```
 
-Tripod ships a smoke-test pipeline under `tests/`. The end-to-end example is a template you can adapt for new domains.
-See `tests/README.md` for flags and report artifacts.
+This is a framework validation loop (data generation + RAFT/RAG + training + evaluation). It is a test scaffold, not the domain example.
+For a domain example, see `pipelines/README.md`. See `tests/README.md` for flags and report artifacts.
 
 ## Interfacing With Tripod (Entry Points)
 
@@ -133,35 +132,23 @@ See `tests/README.md` for flags and report artifacts.
 - `TripodOrchestrator.execute("ingest", {"documents": [...], "target": "rag"})`: build the inference RAG vector store (default target is `rag`).
 - `TripodOrchestrator.execute("inference", {"domain": "...", "sensor_data": {...}})`: runs RAG + prompting and prints the prompt (LLM call is intentionally pluggable).
 - `TripodOrchestrator.execute("evaluate")`: stub entry point (logs the test set path; use `tests/smoke_e2e.py` for a working eval loop).
-- `tests/smoke_e2e.py`: the most complete “batteries-included” entry point for integration testing (data generation + training + evaluation + report).
 
 ## Configuration (YAML)
 
-Tripod is configured via YAML under `configs/`. The key knobs:
-
-- `training.hyperparameters`: batch/epochs/seq length/optim + SFT settings
-  - `response_marker`: delimiter used to split prompt vs completion (default `\nASSISTANT:\n`)
-  - `mask_prompt`: if true, only the completion contributes to loss
-- Retrieval config is split into `raft` (training-time) and `rag` (inference-time).
-- `raft.enabled` / `rag.enabled`: toggle retrieval for training data enrichment vs inference-time prompts
-- `raft.retrieval.top_k` / `rag.retrieval.top_k`: how many docs to retrieve per phase
-- `prompting.system_prompt` + `prompting.user_prompt_structure`: output schema and instructions
-- `prompting.backend`: `raw` (template rendering) or `dspy` (DSPy program)
-- `prompting.dspy`: DSPy-specific knobs like `instructions`, `chain_of_thought`, and `output_field`
-
-Use `configs/smoke_config.yaml` as a working template.
-See `configs/README.md` for config-to-runtime coverage.
+Tripod is configured via YAML under `configs/`.
+Use `configs/smoke_e2e_config.yaml` as a working template, and see `configs/README.md`
+for the full config reference and runtime behavior.
 
 ## RAFT vs RAG
 
 - **RAFT (`raft.*`)**: retrieval runs offline during dataset construction using the configured retriever. Retrieved text is concatenated into each training prompt before SFT so the model learns to use retrieved context at inference; the training loop itself never queries a retriever.
-- **RAG (`rag.*`)**: retrieval runs per request, injecting context into the prompt right before generation.
+- **RAG (`rag.*`)**: inference-time retrieval that runs per request, injecting context into the prompt right before generation.
 - In `tests/smoke_e2e.py`, RAFT toggles whether a second adapter is trained; the report compares RAFT vs no-RAFT adapters under identical inference-time RAG settings.
 - You can point both modes at the same vector store or keep separate stores for controlled experiments.
 
 ## Adapting To Your Domain
 
-The bundled `tests/smoke_e2e.py` is a scaffold: it shows the “shape” of an integration test, but **your schema + metrics are task-specific**.
+Use the IoT pipeline walkthrough in `pipelines/README.md` as the concrete example; the smoke tests focus on framework validation. Your schema and metrics are always task-specific.
 
 Typical steps:
 
@@ -169,9 +156,9 @@ Typical steps:
 2. **Provide training/eval data**:
    - If you keep the JSONL approach, generate `train.jsonl` / `test.jsonl` with your fields and ground truth.
 3. **Update parsing + scoring**:
-   - `tests/smoke_e2e.py::parse_action` and `tests/smoke_e2e.py::evaluate` should reflect your schema and tolerances.
+   - Align evaluation logic to your schema and tolerances in your pipeline or test harness.
 4. **Decide what retrieval means for your domain (RAFT + RAG)**:
-   - Ingest your docs/snippets with metadata, and filter/retrieve appropriately in `_build_rag_context`.
+   - Ingest your docs/snippets with metadata, and filter/retrieve appropriately in your pipeline code.
 
 ## Example Pipelines
 
@@ -191,4 +178,4 @@ Where to look when something is off:
 - **Evaluation quality**
   - `summary.json` contains all run args (including holdout settings) and per-pass metrics.
 
-If you want more verbosity, change `logging.basicConfig(level=logging.INFO, ...)` to `DEBUG` in the relevant entry script (e.g., `tests/smoke_e2e.py`).
+If you want more verbosity, change `logging.basicConfig(level=logging.INFO, ...)` to `DEBUG` in the relevant entry script or pipeline.

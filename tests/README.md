@@ -1,7 +1,7 @@
 # Tests
 
-This folder documents the bundled smoke tests and their intent. (It can also host
-future `pytest` tests.)
+This folder documents the bundled smoke tests and their intent. It can also host
+future `pytest` tests.
 
 ## End-to-end smoke (`tests/smoke_e2e.py`)
 
@@ -41,7 +41,7 @@ that compare RAFT-trained adapters against no-RAFT adapters under the same infer
 RAG setting.
 
 Sampling knobs for the evaluator live under `evaluation.generation` in
-`configs/smoke_config.yaml` (default is deterministic).
+`configs/smoke_e2e_config.yaml` (default is deterministic).
 
 Artifacts produced under `training_data/smoke/reports/<run_id>/`:
 - `summary.md`, `summary.json`, `run.log`
