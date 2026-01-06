@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 
 
 class LoRAConfigModel(BaseModel):
@@ -56,7 +56,6 @@ class PromptingConfig(BaseModel):
     template_id: str
     system_prompt: str
     user_prompt_structure: str
-    few_shot: dict[str, Any]
     backend: str = "raw"
     dspy: DSPyConfig | None = None
 
@@ -68,6 +67,8 @@ class EvaluationConfig(BaseModel):
     test_set_path: str
     metrics: list[str]
     generation: dict[str, Any] | None = None
+    entrypoint: str | None = None
+    evaluator: str | None = None
 
     class Config:
         extra = "ignore"
@@ -84,41 +85,3 @@ class TripodConfig(BaseModel):
 
     class Config:
         extra = "ignore"
-
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_retrieval_configs(cls, data: Any) -> Any:
-        match data:
-            case {
-                "rag": {
-                    "training": dict() as training,
-                    "inference": dict() as inference,
-                },
-                **rest,
-            }:
-                return {**rest, "rag": inference, "raft": training}
-            case {"rag": {"training": dict() as training} as rag, **rest} if (
-                "inference" not in rag
-            ):
-                return {
-                    **rest,
-                    "rag": training,
-                    "raft": training,
-                }
-            case {
-                "rag": {"inference": dict() as inference} as rag,
-                **rest,
-            } if ("training" not in rag):
-                return {
-                    **rest,
-                    "rag": inference,
-                    "raft": inference,
-                }
-            case {"rag": dict() as rag, "raft": dict() as raft, **rest}:
-                return {**rest, "rag": rag, "raft": raft}
-            case {"rag": dict() as rag, **rest} if "raft" not in data:
-                return {**rest, "rag": rag, "raft": rag}
-            case {"raft": dict() as raft, **rest} if "rag" not in data:
-                return {**rest, "rag": raft, "raft": raft}
-            case _:
-                return data

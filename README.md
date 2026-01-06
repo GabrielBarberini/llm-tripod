@@ -69,6 +69,7 @@ flowchart LR
 - Pass naming and metrics are defined by the evaluation script (see `tests/README.md` for smoke-test details).
 - When `raft.enabled` is true, the smoke script evaluates both tuned no-RAFT and tuned RAFT adapters under the same inference-time RAG toggle.
 - The "with_rag" passes inject retrieved context at prompt time (uses `rag`); the "without_rag" passes force empty context regardless of how the training data was built.
+- `TripodOrchestrator.execute("evaluate")` loads `evaluation.entrypoint` and runs `evaluation.evaluator`; if unset, it falls back to the stub evaluator.
 
 For more detail on flows and feature flags, see `FLOW_OF_INFORMATION.md`.
 
@@ -127,11 +128,12 @@ For a domain example, see `pipelines/README.md`. See `tests/README.md` for flags
 
 ## Interfacing With Tripod (Entry Points)
 
-- `TripodOrchestrator.execute("train")`: run LoRA/QLoRA training (expects `training.dataset_path`).
+- `TripodOrchestrator.execute("prepare_train")`: build an SFT JSONL dataset from raw JSON/JSONL (`training.dataset_path`).
+- `TripodOrchestrator.execute("train")`: run LoRA/QLoRA training (expects an SFT dataset at `training.dataset_path`).
 - `TripodOrchestrator.execute("ingest", {"documents": [...], "target": "raft"})`: build the RAFT vector store for training-time retrieval.
 - `TripodOrchestrator.execute("ingest", {"documents": [...], "target": "rag"})`: build the inference RAG vector store (default target is `rag`).
 - `TripodOrchestrator.execute("inference", {"domain": "...", "sensor_data": {...}})`: runs RAG + prompting and prints the prompt (LLM call is intentionally pluggable).
-- `TripodOrchestrator.execute("evaluate")`: stub entry point (logs the test set path; use `tests/smoke_e2e.py` for a working eval loop).
+- `TripodOrchestrator.execute("evaluate")`: dispatches to a registered evaluator (see `evaluation.entrypoint` + `evaluation.evaluator`); falls back to a stub logger if none is registered.
 
 ## Configuration (YAML)
 

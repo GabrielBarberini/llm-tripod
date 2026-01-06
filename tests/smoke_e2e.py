@@ -1,5 +1,6 @@
 """
 End-to-end smoke test: Training (LoRA/QLoRA) + RAFT + RAG + Prompting + Evaluation.
+This script builds its own SFT dataset; it does not rely on prepare_train.
 
 Designed to run on a GPU training node (e.g., RunPod).
 

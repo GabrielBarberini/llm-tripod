@@ -47,7 +47,7 @@ rag:
 
   # Retrieval Config (The knobs you tweak)
   retrieval:
-    strategy: "similarity" # similarity, mmr, hybrid
+    strategy: "similarity" # similarity only
     top_k: 5
 
 raft:
@@ -62,7 +62,7 @@ raft:
 
   # Retrieval Config (The knobs you tweak)
   retrieval:
-    strategy: "similarity" # similarity, mmr, hybrid
+    strategy: "similarity" # similarity only
     top_k: 5
 
 # ------------------------------------------------------------------------------
@@ -98,19 +98,13 @@ prompting:
     ### INSTRUCTION:
     Analyze the history and current state. Determine the optimal configuration.
 
-  # Few-Shot Management
-  few_shot:
-    enabled: true
-    source_file: "./configs/few_shot_examples.json"
-    selection_strategy: "semantic_similarity" # dynamic selection based on input
-    count: 3
-
 # ------------------------------------------------------------------------------
 # EVALUATION (The Feedback Loop)
 # ------------------------------------------------------------------------------
 evaluation:
+  entrypoint: "pipelines.iot.evaluator"
+  evaluator: "iot"
   test_set_path: "./training_data/test_set_golden.jsonl"
   metrics:
-    - "json_validity"
-    - "action_match_accuracy"
-    - "reasoning_similarity"
+    - "schema_validity"
+    - "sample_count"

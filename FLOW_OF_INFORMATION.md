@@ -43,6 +43,7 @@ flowchart LR
 - Pass naming and metrics are defined by the evaluation script and are task-specific.
 - When `raft.enabled` is true, the smoke script trains both no-RAFT and RAFT adapters and evaluates each under the same inference-time RAG toggle.
 - `--holdout-policies` makes test policy IDs unseen in training, which increases reliance on retrieval.
+ - `TripodOrchestrator.execute("evaluate")` loads `evaluation.entrypoint` and dispatches to `evaluation.evaluator`; when unset, it falls back to the stub evaluator.
 
 ## RAFT and RAG
 
@@ -62,6 +63,7 @@ flowchart LR
 - `raft.retrieval.top_k` / `rag.retrieval.top_k` and `raft.retrieval.strategy` / `rag.retrieval.strategy`: affect retrieval behavior.
 - `prompting.backend`: `raw` (rendered prompt) vs `dspy` (DSPy program output).
 - `prompting.dspy.include_user_prompt`, `prompting.dspy.chain_of_thought`, `prompting.dspy.output_field`: DSPy behavior switches.
+- `evaluation.entrypoint` / `evaluation.evaluator`: evaluator module hook and registry key for pipeline-specific evaluation.
 
 ### Script flags (smoke)
 

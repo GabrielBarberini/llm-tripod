@@ -4,6 +4,7 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
 ## Project Structure & Module Organization
 - `main.py`: High-level orchestrator wiring the legs and loading config.
 - `core/training.py`, `core/rag.py`, `core/prompting.py`: Leg implementations; extend or swap logic inside each file.
+- `core/evaluation.py`: Evaluator registry + stub hook.
 - `core/config.py`, `core/base.py`: Pydantic config schemas and shared base class.
 - `configs/iot_domain_config.yaml`: Domain config (paths, hyperparameters, prompts). Place any hardcoded values or additional YAMLs here.
 - `tests/README.md`: Smoke-test passes, metrics, and report artifacts.
@@ -21,6 +22,10 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('train')"
   ```
+- Training dataset prep (JSON/JSONL → SFT):  
+  ```bash
+  python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('prepare_train')"
+  ```
 - Ingestion placeholder (document list, defaults to RAG):  
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('ingest', {'documents': ['sample note']})"
@@ -28,6 +33,10 @@ This repository hosts a modular Tripod framework for Industrial IoT control, com
 - Ingestion targeting RAFT:  
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('ingest', {'documents': ['sample note'], 'target': 'raft'})"
+  ```
+- Evaluation hook (uses `evaluation.entrypoint`/`evaluation.evaluator` or falls back to stub):  
+  ```bash
+  python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('evaluate')"
   ```
 - To use a different config file, pass `TripodOrchestrator('configs/your_config.yaml')`.
 - Local smoke (downloads tiny HF models): `python tests/smoke_local.py`

@@ -72,11 +72,6 @@ prompting:
     Use the policy numbers from HISTORY when action is set_thermal_profile.
     If vibration >= 1.0, prefer schedule_maintenance.
     Output JSON now.
-  few_shot:
-    enabled: false
-    source_file: ""
-    selection_strategy: "none"
-    count: 0
 
 evaluation:
   test_set_path: "./training_data/smoke/test.jsonl"

@@ -97,13 +97,35 @@ class RAGLeg(BaseLeg):
     def _retrieval_settings(self) -> tuple[int, str]:
         match self.config.retrieval:
             case {"top_k": int() as top_k, "strategy": str() as strategy}:
-                return top_k, strategy
+                resolved_top_k = top_k
+                resolved_strategy = strategy
             case {"top_k": int() as top_k}:
-                return top_k, "similarity"
+                resolved_top_k = top_k
+                resolved_strategy = "similarity"
             case {"strategy": str() as strategy}:
-                return 5, strategy
+                resolved_top_k = 5
+                resolved_strategy = strategy
             case _:
-                return 5, "similarity"
+                resolved_top_k = 5
+                resolved_strategy = "similarity"
+
+        resolved_strategy = resolved_strategy.strip().lower()
+        self._validate_strategy(resolved_strategy)
+        return resolved_top_k, resolved_strategy
+
+    def _validate_strategy(self, strategy: str) -> None:
+        match self.config.vector_db_type.strip().lower():
+            case "local":
+                match strategy:
+                    case "similarity":
+                        return
+                    case _:
+                        raise ValueError(
+                            "Unsupported retrieval.strategy for local store: "
+                            f"{strategy}. Supported: similarity."
+                        )
+            case _:
+                return
 
     def run(self, query: str, filters: dict[str, Any] | None = None) -> str:
         match self.config.enabled:

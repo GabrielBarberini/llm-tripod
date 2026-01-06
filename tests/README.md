@@ -7,6 +7,7 @@ future `pytest` tests.
 
 End-to-end smoke test: dataset generation, RAFT (training retrieval), RAG ingest,
 SFT training, and eval. This script is a template for new domains.
+It builds its own SFT dataset, so you do not need to run `prepare_train`.
 
 Run:
 
