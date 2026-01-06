@@ -37,7 +37,7 @@ training:
 # ------------------------------------------------------------------------------
 rag:
   enabled: true
-  vector_db_type: "chromadb" # chromadb, pinecone, faiss
+  vector_db_type: "local" # local by default; extend core/vectordb.py for others.
   vector_db_path: "./training_data/vectordb"
   collection_name: "iot_history_logs"
 
@@ -52,7 +52,7 @@ rag:
 
 raft:
   enabled: true
-  vector_db_type: "chromadb" # chromadb, pinecone, faiss
+  vector_db_type: "local" # local by default; extend core/vectordb.py for others.
   vector_db_path: "./training_data/vectordb"
   collection_name: "iot_history_logs"
 

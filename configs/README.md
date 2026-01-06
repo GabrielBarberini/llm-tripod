@@ -32,6 +32,8 @@ Legacy configs that use `rag.training` / `rag.inference` are coerced to `raft` a
   training examples in `tests/smoke_e2e.py`.
 - `rag.enabled`: enable inference-time retrieval in `main.py` and
   the smoke evaluator.
+- `rag.vector_db_type` / `raft.vector_db_type`: store adapter selector; `local`
+  is built-in (numpy-backed). Add new adapters in `core/vectordb.py`.
 - `rag.vector_db_path` / `raft.vector_db_path`: local vector store path (shared or separate).
 - `rag.ingestion.embedding_model` / `raft.ingestion.embedding_model`: sentence-transformers model used to embed docs.
 - `rag.retrieval.top_k` / `raft.retrieval.top_k`: number of docs to return per query.

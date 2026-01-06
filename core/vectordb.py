@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -17,6 +17,61 @@ class VectorDoc:
     id: str
     text: str
     metadata: dict[str, Any]
+
+
+class VectorStore(Protocol):
+    def query(
+        self,
+        query_text: str,
+        top_k: int = 5,
+        filters: dict[str, Any] | None = None,
+    ) -> list[tuple[VectorDoc, float]]: ...
+
+    def save(self, dir_path: str) -> None: ...
+
+
+def _normalize_db_type(vector_db_type: str) -> str:
+    return vector_db_type.strip().lower()
+
+
+def _unsupported_db_type(vector_db_type: str) -> ValueError:
+    return ValueError(
+        f"Unsupported vector_db_type '{vector_db_type}'. Supported: local."
+    )
+
+
+def build_vector_store(
+    vector_db_type: str,
+    docs: list[VectorDoc],
+    embedding_model: str,
+    device: str | None = None,
+) -> VectorStore:
+    match _normalize_db_type(vector_db_type):
+        case "local":
+            return LocalVectorStore.build(
+                docs=docs,
+                embedding_model=embedding_model,
+                device=device,
+            )
+        case _:
+            raise _unsupported_db_type(vector_db_type)
+
+
+def load_vector_store(
+    vector_db_type: str,
+    dir_path: str,
+    embedding_model: str,
+    device: str | None = None,
+) -> VectorStore:
+    match _normalize_db_type(vector_db_type):
+        case "local":
+            return LocalVectorStore.load(
+                dir_path=dir_path,
+                embedding_model=embedding_model,
+                device=device,
+            )
+        case _:
+            raise _unsupported_db_type(vector_db_type)
 
 
 class LocalVectorStore:

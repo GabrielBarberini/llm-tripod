@@ -6,7 +6,12 @@ from typing import Any
 
 from core.base import BaseLeg
 from core.config import RAGConfig
-from core.vectordb import LocalVectorStore, VectorDoc
+from core.vectordb import (
+    VectorDoc,
+    VectorStore,
+    build_vector_store,
+    load_vector_store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +24,7 @@ class RAGLeg(BaseLeg):
 
     def __init__(self, config: RAGConfig):
         super().__init__(config)
-        self._store: LocalVectorStore | None = None
+        self._store: VectorStore | None = None
 
     def ingest(self, raw_documents: list[Any]) -> None:
         match self.config.enabled:
@@ -60,7 +65,8 @@ class RAGLeg(BaseLeg):
             logger.warning("No valid RAG documents to ingest.")
             return
 
-        store = LocalVectorStore.build(
+        store = build_vector_store(
+            vector_db_type=self.config.vector_db_type,
             docs=docs,
             embedding_model=self._embedding_model(),
         )
@@ -73,7 +79,8 @@ class RAGLeg(BaseLeg):
         path = Path(self.config.vector_db_path)
         match path.exists():
             case True:
-                self._store = LocalVectorStore.load(
+                self._store = load_vector_store(
+                    vector_db_type=self.config.vector_db_type,
                     dir_path=self.config.vector_db_path,
                     embedding_model=self._embedding_model(),
                 )
