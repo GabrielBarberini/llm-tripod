@@ -1,5 +1,9 @@
 # LLM Tripod
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/badge/MPP-v1.2.0-blue)](https://deepwiki.com/GabrielBarberini/llm-tripod)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/GabrielBarberini/llm-tripod)
+
 Tripod is a lightweight, modular **LLM integration-test harness** for fast end-to-end iteration (not a full training platform). It separates the pipeline into three “legs”:
 
 1. **Training (Leg 1)**: Fine-tune a small LLM with LoRA/QLoRA (`core/training.py`).
