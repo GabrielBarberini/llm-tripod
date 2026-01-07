@@ -14,7 +14,6 @@ flowchart TD
 
 - In `tests/smoke_e2e.py`, RAFT (training-time retrieval) enriches each training example before SFT when `raft.enabled` is true.
 - `training.hyperparameters.response_marker` and `training.hyperparameters.mask_prompt` control loss masking: the prompt portion is ignored in the labels (`-100`) so only the completion contributes to loss (attention still sees the full prompt).
-- Training is offline; it is not interleaved with inference.
 
 ## Inference path (TripodOrchestrator.execute("inference"))
 
