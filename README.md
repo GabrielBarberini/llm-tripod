@@ -96,7 +96,22 @@ pip install -r requirements-dev.txt
 
 ## Running
 
-### Prompt-only inference scaffold (no LLM call yet)
+### Prompt-only inference scaffold (raw backend, no LLM call)
+
+Before running inference, you need a minimal RAG store (or disable RAG):
+
+```bash
+python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('ingest', {'documents': ['Policy: keep temp < 80C; if vibration > 1.0 schedule maintenance.']})"
+```
+
+This writes `docs.jsonl` + `embeddings.npy` into `rag.vector_db_path`
+(default `training_data/vectordb`). If you want prompt-only rendering with no
+retrieval, set `rag.enabled: false` in your config. The first ingest downloads
+the embedding model from Hugging Face.
+
+Ensure your config uses the raw backend (`prompting.backend: "raw"`). The
+default IoT config uses DSPy; if you keep it, you must configure a DSPy LM
+before inference.
 
 ```bash
 python3 main.py
