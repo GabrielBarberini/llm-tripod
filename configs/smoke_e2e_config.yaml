@@ -1,11 +1,11 @@
 experiment_name: "smoke_e2e_v1"
-output_dir: "./training_data/smoke/out"
+output_dir: "./training_data/reports/smoke_e2e/out"
 
 training:
   enabled: true
   base_model: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-  dataset_path: "./training_data/smoke/train_text_no_raft.jsonl"
-  adapter_output_dir: "./training_data/smoke/adapter"
+  dataset_path: "./training_data/datasets/smoke_e2e/train_text_no_raft.jsonl"
+  adapter_output_dir: "./training_data/adapters/smoke_e2e"
   lora_config:
     r: 8
     alpha: 16
@@ -32,7 +32,7 @@ training:
 rag:
   enabled: true
   vector_db_type: "local"
-  vector_db_path: "./training_data/smoke/vectordb"
+  vector_db_path: "./training_data/vectordb/smoke_e2e"
   collection_name: "smoke"
   ingestion:
     embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
@@ -43,7 +43,7 @@ rag:
 raft:
   enabled: true
   vector_db_type: "local"
-  vector_db_path: "./training_data/smoke/vectordb"
+  vector_db_path: "./training_data/vectordb/smoke_e2e"
   collection_name: "smoke"
   ingestion:
     embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
@@ -74,7 +74,7 @@ prompting:
     Output JSON now.
 
 evaluation:
-  test_set_path: "./training_data/smoke/test.jsonl"
+  test_set_path: "./training_data/datasets/smoke_e2e/test.jsonl"
   metrics:
     - "action_match_accuracy"
   generation:

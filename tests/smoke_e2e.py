@@ -45,9 +45,9 @@ logging.basicConfig(
 logger = logging.getLogger("SmokeE2E")
 
 
-SMOKE_DIR = ROOT / "training_data" / "smoke"
+DATASETS_DIR = ROOT / "training_data" / "datasets" / "smoke_e2e"
 SMOKE_CONFIG = ROOT / "configs" / "smoke_e2e_config.yaml"
-DEFAULT_REPORTS_DIR = SMOKE_DIR / "reports"
+DEFAULT_REPORTS_DIR = ROOT / "training_data" / "reports" / "smoke_e2e"
 
 
 def parse_args():
@@ -93,7 +93,7 @@ def parse_args():
         "--report-dir",
         type=str,
         default="",
-        help="Write report outputs here (default: training_data/smoke/reports/<timestamp>).",
+        help="Write report outputs here (default: training_data/reports/smoke_e2e/<timestamp>).",
     )
     p.add_argument(
         "--save-predictions",
@@ -561,13 +561,13 @@ def main():
 
     import subprocess
 
-    SMOKE_DIR.mkdir(parents=True, exist_ok=True)
+    DATASETS_DIR.mkdir(parents=True, exist_ok=True)
     subprocess.check_call(
         [
             "python",
             str(ROOT / "tests" / "generate_smoke_dataset.py"),
             "--out-dir",
-            str(SMOKE_DIR),
+            str(DATASETS_DIR),
             "--n",
             str(args.n),
             "--num-policies",
@@ -586,13 +586,13 @@ def main():
         ]
     )
 
-    rag_docs = read_jsonl(SMOKE_DIR / "rag_docs.jsonl")
+    rag_docs = read_jsonl(DATASETS_DIR / "rag_docs.jsonl")
     report["paths"].update(
         {
-            "smoke_dir": str(SMOKE_DIR),
-            "rag_docs": str(SMOKE_DIR / "rag_docs.jsonl"),
-            "dataset_train": str(SMOKE_DIR / "train.jsonl"),
-            "dataset_test": str(SMOKE_DIR / "test.jsonl"),
+            "datasets_dir": str(DATASETS_DIR),
+            "rag_docs": str(DATASETS_DIR / "rag_docs.jsonl"),
+            "dataset_train": str(DATASETS_DIR / "train.jsonl"),
+            "dataset_test": str(DATASETS_DIR / "test.jsonl"),
         }
     )
     _write_json(report_dir / "summary.json", report)
@@ -635,10 +635,10 @@ def main():
 
     _ingest_rag_docs([raft, rag], docs_for_ingest)
 
-    train_rows = read_jsonl(SMOKE_DIR / "train.jsonl")
-    test_rows = read_jsonl(SMOKE_DIR / "test.jsonl")
+    train_rows = read_jsonl(DATASETS_DIR / "train.jsonl")
+    test_rows = read_jsonl(DATASETS_DIR / "test.jsonl")
 
-    train_text_no_raft_path = SMOKE_DIR / "train_text_no_raft.jsonl"
+    train_text_no_raft_path = DATASETS_DIR / "train_text_no_raft.jsonl"
     train_text_no_raft_rows = _build_train_text_rows(
         prompter, raft, train_rows, include_rag=False
     )
@@ -647,7 +647,7 @@ def main():
 
     train_text_raft_path: Path | None = None
     if cfg.raft.enabled:
-        train_text_raft_path = SMOKE_DIR / "train_text_raft.jsonl"
+        train_text_raft_path = DATASETS_DIR / "train_text_raft.jsonl"
         train_text_raft_rows = _build_train_text_rows(
             prompter, raft, train_rows, include_rag=True
         )

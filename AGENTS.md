@@ -1,20 +1,24 @@
 # Repository Guidelines
-This repository hosts a modular Tripod framework for Industrial IoT control, combining three legs—training (LoRA/PEFT), retrieval-augmented generation, and prompt engineering—configured via YAML.
+This repository hosts a modular Tripod framework for LLM control tasks (IoT example), combining three legs—training (LoRA/PEFT), retrieval, and prompt engineering—configured via YAML.
 
 ## Project Structure & Module Organization
 - `main.py`: High-level orchestrator wiring the legs and loading config.
 - `core/training.py`, `core/rag.py`, `core/prompting.py`: Leg implementations; extend or swap logic inside each file.
+- `core/vectordb.py`: Local vector store adapter.
 - `core/evaluation.py`: Evaluator registry + stub hook.
 - `core/config.py`, `core/base.py`: Pydantic config schemas and shared base class.
-- `configs/iot_domain_config.yaml`: Domain config (paths, hyperparameters, prompts). Place any hardcoded values or additional YAMLs here.
+- `configs/smoke_e2e_config.yaml`: End-to-end smoke config.
+- `configs/iot_domain_config.yaml`: Example production config (IoT-themed).
+- `configs/README.md`: Config-to-runtime mapping.
+- `pipelines/README.md`, `pipelines/iot/`: Example pipelines and walkthroughs.
 - `tests/README.md`: Smoke-test passes, metrics, and report artifacts.
-- `training_data/`: Local root for vectordb/test sets referenced by config. Create as needed; keep large assets out of Git.
-- Outputs (adapters/experiments) default to `../artifacts`/`../experiments` to keep the repo lean; adjust per environment.
+- `training_data/`: Local root for datasets, vectordb, adapters, and reports. Create as needed; keep large assets out of Git.
+- Outputs are configurable; the IoT config uses `../artifacts`/`../experiments`, while smoke defaults live under `training_data/`.
 
 ## Setup, Build, and Development Commands
 - Python 3.10+ recommended; install deps: `pip install pydantic pyyaml`.
 - Dev tooling (format/lint/test): `pip install -r requirements-dev.txt`.
-- Inference demo (uses `configs/iot_domain_config.yaml`):  
+- Inference demo (uses `configs/iot_domain_config.yaml`; requires RAG store + DSPy LM unless you switch to `prompting.backend: "raw"`):  
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('inference', {'sensor_data': {'temp': 78.5, 'vibration': 1.2}})"
   ```

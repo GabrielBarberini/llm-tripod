@@ -294,7 +294,7 @@ def train_model(train_ds: Dataset, tokenizer: AutoTokenizer):
     model.config.pad_token_id = tokenizer.eos_token_id
 
     args = TrainingArguments(
-        output_dir=str(BASE_DIR / "training_data" / "smoke_run"),
+        output_dir=str(BASE_DIR / "training_data" / "reports" / "smoke_local"),
         per_device_train_batch_size=per_device_bs,
         num_train_epochs=num_epochs,
         logging_steps=50,

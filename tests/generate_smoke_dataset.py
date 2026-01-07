@@ -36,7 +36,9 @@ STATUSES = ["stable", "warning", "critical"]
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument(
-        "--out-dir", default="training_data/smoke", help="Output directory"
+        "--out-dir",
+        default="training_data/datasets/smoke_e2e",
+        help="Output directory (under training_data/datasets)",
     )
     p.add_argument("--n", type=int, default=2000, help="Number of samples")
     p.add_argument(

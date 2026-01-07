@@ -21,9 +21,10 @@ The sections below explain what each config block does and where it is used.
   JSON/JSONL rows without a `text` field, `TripodOrchestrator.execute("prepare_train")`
   builds an SFT dataset using `prompting.*` plus optional RAFT retrieval. If you
   provide `text` rows directly, each row should be `PROMPT + response_marker + TARGET`.
-- Raw rows can include `domain`, `sensor_data`, and `expected` (or `target`), and
-  may optionally specify `rag_context`, `raft_query`/`rag_query`, or
-  `raft_filters`/`rag_filters` to control retrieval.
+- Raw rows can include task-specific input fields plus `expected` (or `target`)
+  for the desired output. Optional fields like `rag_context`,
+  `raft_query`/`rag_query`, or `raft_filters`/`rag_filters` let you control
+  retrieval per row.
 - `training.adapter_output_dir`: output directory for LoRA/QLoRA adapters.
 - `training.hyperparameters.response_marker`: delimiter that splits prompt vs
   completion inside the training text.

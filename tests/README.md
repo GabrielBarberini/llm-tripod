@@ -44,9 +44,12 @@ RAG setting.
 Sampling knobs for the evaluator live under `evaluation.generation` in
 `configs/smoke_e2e_config.yaml` (default is deterministic).
 
-Artifacts produced under `training_data/smoke/reports/<run_id>/`:
+Artifacts produced under `training_data/reports/smoke_e2e/<run_id>/`:
 - `summary.md`, `summary.json`, `run.log`
 - `predictions/*.jsonl`
+
+Datasets + retrieval docs are generated under `training_data/datasets/smoke_e2e/`.
+The vector store is written to `training_data/vectordb/smoke_e2e/`.
 
 ## Local smoke (`tests/smoke_local.py`)
 
