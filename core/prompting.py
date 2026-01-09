@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from core.base import BaseLeg
 from core.config import DSPyConfig, PromptingConfig
 
 logger = logging.getLogger(__name__)
+
+_TEMPLATE_VAR_RE = re.compile(r"{{\s*([a-zA-Z_][\w\.]*)\s*}}")
 
 
 class PromptLeg(BaseLeg):
@@ -47,21 +50,19 @@ class PromptLeg(BaseLeg):
                 )
 
     def render_prompt(self, context: dict[str, Any]) -> str:
-        domain, rag_context, sensor_data_str = self._normalize_context(context)
-
-        system_prompt = self.config.system_prompt.replace(
-            "{{ domain }}", domain
+        system_prompt = self._render_template(
+            self.config.system_prompt, context
         )
-        user_prompt = self.config.user_prompt_structure.replace(
-            "{{ rag_context }}", rag_context
+        user_prompt = self._render_template(
+            self.config.user_prompt_structure, context
         )
-        user_prompt = user_prompt.replace("{{ sensor_data }}", sensor_data_str)
 
-        full_prompt = f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}"
-        return full_prompt
+        return f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}"
 
     def predict(self, context: dict[str, Any]) -> str:
-        domain, rag_context, sensor_data_str = self._normalize_context(context)
+        domain, rag_context, sensor_data_str = self._normalize_dspy_context(
+            context
+        )
         dspy = self._ensure_dspy()
         if getattr(dspy.settings, "lm", None) is None:
             raise RuntimeError(
@@ -73,14 +74,54 @@ class PromptLeg(BaseLeg):
         )
         return self._extract_prediction(prediction, self._dspy_output_field)
 
-    def _normalize_context(
+    def _render_template(self, template: str, context: dict[str, Any]) -> str:
+        missing: set[str] = set()
+
+        def _resolve(path: str) -> Any:
+            cur: Any = context
+            for part in path.split("."):
+                match cur:
+                    case dict() as m if part in m:
+                        cur = m[part]
+                    case _:
+                        missing.add(path)
+                        return ""
+            return cur
+
+        def _format(value: Any) -> str:
+            match value:
+                case None:
+                    return ""
+                case dict() | list():
+                    return json.dumps(
+                        value, ensure_ascii=False, sort_keys=True
+                    )
+                case _:
+                    return str(value)
+
+        def _repl(match: re.Match) -> str:
+            key = match.group(1)
+            return _format(_resolve(key))
+
+        rendered = _TEMPLATE_VAR_RE.sub(_repl, template)
+        if missing:
+            missing_list = ", ".join(sorted(missing))
+            raise ValueError(
+                "Prompt rendering failed: missing template variables: "
+                f"{missing_list}. Provide them in the inference context (input_payload['context'])."
+            )
+        return rendered
+
+    def _normalize_dspy_context(
         self, context: dict[str, Any]
     ) -> tuple[str, str, str]:
         match context.get("domain"):
             case str() as domain if domain.strip():
                 resolved_domain = domain.strip()
             case _:
-                resolved_domain = "IoT"
+                raise ValueError(
+                    "DSPy prompting requires a non-empty 'domain' in context."
+                )
 
         match context.get("rag_context"):
             case str() as rag_context:
@@ -96,7 +137,9 @@ class PromptLeg(BaseLeg):
                     sensor_data, ensure_ascii=False, sort_keys=True
                 )
             case None:
-                sensor_data_str = "{}"
+                raise ValueError(
+                    "DSPy prompting requires 'sensor_data' in context."
+                )
             case other:
                 sensor_data_str = str(other)
 

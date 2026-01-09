@@ -101,23 +101,35 @@ class TripodOrchestrator:
                 self._select_retrieval(retrieval_target).ingest(documents)
             case "inference":
                 match input_payload:
-                    case {
-                        "sensor_data": sensor_data,
-                        **rest,
-                    } if sensor_data is not None:
-                        domain = rest.get("domain", "Thermal Control")
+                    case {"context": dict() as context, **rest}:
+                        retrieval = rest.get("retrieval", {}) or {}
                     case _:
                         raise ValueError(
-                            "Input payload with sensor_data is required for inference."
+                            "Input payload for inference must include a 'context' dict. "
+                            "Example: {'context': {...}, 'retrieval': {'query': '...'}}"
                         )
 
-                retrieved_context = self.rag.run(query=str(sensor_data))
+                match self.rag.config.enabled:
+                    case True:
+                        match retrieval:
+                            case {
+                                "query": str() as query,
+                                **r,
+                            } if query.strip():
+                                filters = r.get("filters")
+                            case _:
+                                raise ValueError(
+                                    "RAG is enabled, but inference payload is missing retrieval.query. "
+                                    "Provide input_payload['retrieval'] = {'query': '...'} or disable rag.enabled."
+                                )
+                        retrieved_context = self.rag.run(
+                            query=query, filters=filters
+                        )
+                    case False:
+                        retrieved_context = ""
 
-                prompt_context = {
-                    "domain": domain,
-                    "rag_context": retrieved_context,
-                    "sensor_data": sensor_data,
-                }
+                prompt_context = dict(context)
+                prompt_context["rag_context"] = retrieved_context
                 prompt_output = self.prompter.run(prompt_context)
 
                 match self.prompter.backend:
@@ -174,7 +186,14 @@ class TripodOrchestrator:
 
         sft_rows = []
         for row in rows:
-            domain = row.get("domain", "IoT")
+            match row.get("domain"):
+                case str() as domain if domain.strip():
+                    domain = domain.strip()
+                case _:
+                    raise ValueError(
+                        "Training rows must include a non-empty 'domain' field "
+                        "(Tripod no longer defaults to 'IoT')."
+                    )
             match row.get("sensor_data"):
                 case dict() | list() as sensor_data:
                     resolved_sensor = sensor_data
@@ -372,7 +391,10 @@ if __name__ == "__main__":
     tripod.execute(
         "inference",
         input_payload={
-            "sensor_data": dummy_sensor,
-            "domain": "Thermal Control",
+            "context": {
+                "domain": "Thermal Control",
+                "sensor_data": dummy_sensor,
+            },
+            "retrieval": {"query": json.dumps(dummy_sensor, sort_keys=True)},
         },
     )
