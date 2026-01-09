@@ -7,7 +7,7 @@ The sections below explain what each config block does and where it is used.
 
 - `configs/smoke_e2e_config.yaml`: end-to-end smoke test config used by
   `tests/acceptance/smoke_e2e.py`.
-- `configs/iot_domain_config.yaml`: example production config
+- `configs/iot_config.yaml`: example production config
   (treat as inspiration and replace paths/values).
 
 ## What each section controls
@@ -50,7 +50,10 @@ The sections below explain what each config block does and where it is used.
 ### `prompting.*` (core/prompting.py)
 
 - `prompting.system_prompt` and `prompting.user_prompt_structure`: prompt template.
-  - Template variables: `{{ domain }}`, `{{ rag_context }}`, `{{ input_data }}`
+  - Template variables:
+    - `{{ task_label }}`: a task label injected at runtime (from `input_payload["task_label"]` in `main.py`)
+    - `{{ rag_context }}`: retrieved context snippets
+    - `{{ input_data }}`: request input payload (JSON-rendered)
 - `prompting.backend`: `raw` renders the template; `dspy` executes a DSPy program.
 - `prompting.dspy.*`: DSPy options used when `prompting.backend: dspy`.
 

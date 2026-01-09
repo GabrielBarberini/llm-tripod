@@ -25,7 +25,7 @@ rows. Point `training.dataset_path` to this file and run
 - `expected` or `target`: the desired output (string or JSON-serializable object)
 
 **Optional fields:**
-- `domain`: domain name (used in prompt rendering)
+- `task_label`: task label (replaces `{{ task_label }}` in `prompting.system_prompt`)
 - `input_data`: task input data (dict, list, or any JSON-serializable value)
 - `rag_context`: pre-computed retrieval context (string)
 - `raft_query` or `rag_query`: query string for RAFT retrieval during prep
@@ -33,8 +33,8 @@ rows. Point `training.dataset_path` to this file and run
 
 **Example raw JSONL:**
 ```jsonl
-{"domain": "Thermal Control", "input_data": {"temp": 78.5, "vibration": 1.2}, "expected": {"action": "schedule_maintenance", "parameters": {"fan_speed": 80}, "reasoning": "High vibration detected"}}
-{"domain": "Thermal Control", "input_data": {"temp": 75.0, "vibration": 0.5}, "expected": {"action": "maintain", "parameters": {"fan_speed": 50}, "reasoning": "Normal operating conditions"}}
+{"task_label": "Thermal Control", "input_data": {"temp": 78.5, "vibration": 1.2}, "expected": {"action": "schedule_maintenance", "parameters": {"fan_speed": 80}, "reasoning": "High vibration detected"}}
+{"task_label": "Thermal Control", "input_data": {"temp": 75.0, "vibration": 0.5}, "expected": {"action": "maintain", "parameters": {"fan_speed": 50}, "reasoning": "Normal operating conditions"}}
 ```
 
 **Note:** The field name `input_data` is domain-agnostic and works for any task type (IoT sensors, pricing queries, document inputs, etc.).

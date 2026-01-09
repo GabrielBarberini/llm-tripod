@@ -8,7 +8,7 @@ This repository hosts a modular Tripod framework for LLM control tasks (IoT exam
 - `core/evaluation.py`: Evaluator registry + stub hook.
 - `core/config.py`, `core/base.py`: Pydantic config schemas and shared base class.
 - `configs/smoke_e2e_config.yaml`: End-to-end smoke config.
-- `configs/iot_domain_config.yaml`: Example production config (IoT-themed).
+- `configs/iot_config.yaml`: Example production config (IoT-themed).
 - `configs/README.md`: Config-to-runtime mapping.
 - `pipelines/README.md`, `pipelines/iot/`: Example pipelines and walkthroughs.
 - `tests/README.md`: Smoke-test passes, metrics, and report artifacts.
@@ -18,7 +18,7 @@ This repository hosts a modular Tripod framework for LLM control tasks (IoT exam
 ## Setup, Build, and Development Commands
 - Python 3.10+ recommended; install deps: `pip install pydantic pyyaml`.
 - Dev tooling (format/lint/test): `pip install -r requirements-dev.txt`.
-- Inference demo (uses `configs/iot_domain_config.yaml`; requires RAG store + DSPy LM unless you switch to `prompting.backend: "raw"`):  
+- Inference demo (uses `configs/iot_config.yaml`; requires RAG store + DSPy LM unless you switch to `prompting.backend: "raw"`):  
   ```bash
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('inference', {'input_data': {'temp': 78.5, 'vibration': 1.2}})"
   ```

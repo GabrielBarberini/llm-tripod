@@ -6,7 +6,7 @@ Outputs (under --out-dir):
 - train.jsonl / test.jsonl: supervised examples for LoRA training and evaluation.
 
 Each example contains:
-- domain: string
+- task_label: string
 - policy_id: string (points to a policy doc in RAG)
 - input_data: {temp, vibration, status}
 - expected: {action, parameters, reasoning}
@@ -225,7 +225,7 @@ def main():
         action, parameters, reasoning = decide(policy_by_id[policy_id], sensor)
         train.append(
             {
-                "domain": "Thermal Control",
+                "task_label": "Thermal Control",
                 "policy_id": policy_id,
                 "input_data": sensor,
                 "expected": {
@@ -243,7 +243,7 @@ def main():
         action, parameters, reasoning = decide(policy_by_id[policy_id], sensor)
         test.append(
             {
-                "domain": "Thermal Control",
+                "task_label": "Thermal Control",
                 "policy_id": policy_id,
                 "input_data": sensor,
                 "expected": {

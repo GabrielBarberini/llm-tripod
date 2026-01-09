@@ -28,14 +28,14 @@ def smoke_config(smoke_config_path: Path) -> dict[str, Any]:
 
 @pytest.fixture()
 def iot_config_path() -> Path:
-    """Return path to IoT domain config file."""
+    """Return path to IoT example config file."""
 
-    return ROOT / "configs" / "iot_domain_config.yaml"
+    return ROOT / "configs" / "iot_config.yaml"
 
 
 @pytest.fixture()
 def iot_config(iot_config_path: Path) -> dict[str, Any]:
-    """Return parsed IoT domain config as dict."""
+    """Return parsed IoT example config as dict."""
 
     with iot_config_path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)

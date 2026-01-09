@@ -3,7 +3,7 @@
 This walkthrough uses the IoT example config to illustrate an end-to-end flow.
 
 Config:
-- `configs/iot_domain_config.yaml`
+- `configs/iot_config.yaml`
   - `evaluation.entrypoint` points at `pipelines.iot.evaluator` (registry key: `iot`).
 
 What it demonstrates:

@@ -55,7 +55,7 @@ prompting:
   template_id: "smoke_json_controller_v1"
   backend: "raw"
   system_prompt: |
-    You are an expert Industrial IoT Controller for domain: {{ domain }}.
+    You are an expert Industrial IoT Controller for task: {{ task_label }}.
     Use the provided HISTORY context (policies/heuristics) to choose the correct action.
     Output ONLY valid JSON with keys: action, parameters, reasoning.
     Allowed actions: "maintain", "schedule_maintenance", "set_thermal_profile".

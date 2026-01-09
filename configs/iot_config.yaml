@@ -79,7 +79,7 @@ prompting:
 
   # Dynamic Template using Jinja2 syntax
   system_prompt: |
-    You are an expert Industrial IoT Controller for domain: {{ domain }}.
+    You are an expert Industrial IoT Controller for task: {{ task_label }}.
     Your goal is to maintain system stability while optimizing power.
     Adhere to the following JSON output schema:
     {

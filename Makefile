@@ -32,9 +32,13 @@ ruff:
 	if [ -d ./tests ]; then $(RUFF) check --fix ./tests || true; else echo "No ./tests directory."; fi
 
 test:
-	if [ -d ./tests ]; then $(PYTEST) .; else echo "No ./tests directory."; fi
+	$(PYTEST) -q ./tests/unit ./tests/integration
+
+test-acceptance:
+	$(PYTHON) ./tests/acceptance/smoke_local.py
+	$(PYTHON) ./tests/acceptance/smoke_e2e.py
 
 build:
 	$(DOCKER) build -t $(IMAGE) .
 
-.PHONY: black ruff format test build
+.PHONY: black ruff format test test-acceptance build

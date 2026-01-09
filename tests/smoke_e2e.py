@@ -157,10 +157,11 @@ def _build_train_text_rows(
 ) -> list[dict[str, str]]:
     train_text_rows = []
     for row in rows:
+        task_label = row.get("task_label", "IoT")
         ctx = _build_rag_context(rag, row) if include_rag else ""
         prompt = prompter.render_prompt(
             {
-                "domain": row["domain"],
+                "task_label": task_label,
                 "rag_context": ctx,
                 "input_data": {
                     "policy_id": row["policy_id"],
@@ -427,10 +428,11 @@ def evaluate(
     start_s = time.time()
     for row in test_rows:
         rag_context = _build_rag_context(rag, row) if use_rag else ""
+        task_label = row.get("task_label", "IoT")
 
         prompt = prompter.render_prompt(
             {
-                "domain": row["domain"],
+                "task_label": task_label,
                 "rag_context": rag_context,
                 "input_data": {
                     "policy_id": row["policy_id"],
@@ -494,7 +496,7 @@ def evaluate(
                     {
                         "pass": pass_name,
                         "use_rag": use_rag,
-                        "domain": row.get("domain"),
+                        "task_label": row.get("task_label"),
                         "policy_id": row.get("policy_id"),
                         "input_data": row.get("input_data"),
                         "rag_context": rag_context,

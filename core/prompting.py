@@ -47,11 +47,12 @@ class PromptLeg(BaseLeg):
                 )
 
     def render_prompt(self, context: dict[str, Any]) -> str:
-        domain, rag_context, input_data_str = self._normalize_context(context)
-
-        system_prompt = self.config.system_prompt.replace(
-            "{{ domain }}", domain
+        task_label, rag_context, input_data_str = self._normalize_context(
+            context
         )
+
+        system_prompt = self.config.system_prompt
+        system_prompt = system_prompt.replace("{{ task_label }}", task_label)
         user_prompt = self.config.user_prompt_structure.replace(
             "{{ rag_context }}", rag_context
         )
@@ -61,7 +62,9 @@ class PromptLeg(BaseLeg):
         return full_prompt
 
     def predict(self, context: dict[str, Any]) -> str:
-        domain, rag_context, input_data_str = self._normalize_context(context)
+        task_label, rag_context, input_data_str = self._normalize_context(
+            context
+        )
         dspy = self._ensure_dspy()
         if getattr(dspy.settings, "lm", None) is None:
             raise RuntimeError(
@@ -69,18 +72,20 @@ class PromptLeg(BaseLeg):
                 "or set prompting.backend to 'raw'."
             )
         prediction = self._dspy_module(
-            domain=domain, rag_context=rag_context, input_data=input_data_str
+            task_label=task_label,
+            rag_context=rag_context,
+            input_data=input_data_str,
         )
         return self._extract_prediction(prediction, self._dspy_output_field)
 
     def _normalize_context(
         self, context: dict[str, Any]
     ) -> tuple[str, str, str]:
-        match context.get("domain"):
-            case str() as domain if domain.strip():
-                resolved_domain = domain.strip()
+        match context.get("task_label"):
+            case str() as task_label if task_label.strip():
+                resolved_task_label = task_label.strip()
             case _:
-                resolved_domain = "IoT"
+                resolved_task_label = "IoT"
 
         match context.get("rag_context"):
             case str() as rag_context:
@@ -100,7 +105,7 @@ class PromptLeg(BaseLeg):
             case other:
                 input_data_str = str(other)
 
-        return resolved_domain, resolved_rag, input_data_str
+        return resolved_task_label, resolved_rag, input_data_str
 
     def _ensure_dspy(self):
         if self._dspy_module is not None:
@@ -122,7 +127,7 @@ class PromptLeg(BaseLeg):
                     f"{output_field}"
                 )
             case str() as field if field in {
-                "domain",
+                "task_label",
                 "rag_context",
                 "input_data",
             }:
@@ -149,9 +154,11 @@ class PromptLeg(BaseLeg):
                 else:
                     self.predict = dspy.Predict(signature)
 
-            def forward(self, domain: str, rag_context: str, input_data: str):
+            def forward(
+                self, task_label: str, rag_context: str, input_data: str
+            ):
                 return self.predict(
-                    domain=domain,
+                    task_label=task_label,
                     rag_context=rag_context,
                     input_data=input_data,
                 )
@@ -187,7 +194,7 @@ class PromptLeg(BaseLeg):
 
     def _sanitize_template(self, template: str) -> str:
         return (
-            template.replace("{{ domain }}", "[domain]")
+            template.replace("{{ task_label }}", "[task_label]")
             .replace("{{ rag_context }}", "[rag_context]")
             .replace("{{ input_data }}", "[input_data]")
         )
@@ -197,7 +204,9 @@ class PromptLeg(BaseLeg):
     ):
         attrs = {
             "__doc__": instructions,
-            "domain": dspy.InputField(desc="Domain for the control task."),
+            "task_label": dspy.InputField(
+                desc="Task label for the control task."
+            ),
             "rag_context": dspy.InputField(desc="Retrieved context snippets."),
             "input_data": dspy.InputField(
                 desc="Task input data as JSON (e.g., sensor readings, query parameters, etc.)."

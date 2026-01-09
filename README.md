@@ -17,7 +17,7 @@ Use it to run repeatable end-to-end experiments and iterate on **data, retrieval
 - `core/`: implementations for `TrainingLeg`, `RAGLeg`, `PromptLeg`, plus config models.
 - `configs/`: YAML configs.
   - `configs/smoke_e2e_config.yaml`: end-to-end smoke test config.
-  - `configs/iot_domain_config.yaml`: example production config (IoT-themed; treat as inspiration).
+  - `configs/iot_config.yaml`: example production config (IoT-themed; treat as inspiration).
   - `configs/README.md`: explains each config section and how it is used at runtime.
 - `tests/`: test scripts to validate modules and integrations; see `tests/README.md`.
 - `pipelines/`: example Tripod pipelines to use as a reference for extension.
@@ -151,7 +151,7 @@ For a domain example, see `pipelines/README.md`. See `tests/README.md` for flags
 - `TripodOrchestrator.execute("train")`: run LoRA/QLoRA training (expects an SFT dataset at `training.dataset_path`).
 - `TripodOrchestrator.execute("ingest", {"documents": [...], "target": "raft"})`: build the RAFT vector store for training-time retrieval.
 - `TripodOrchestrator.execute("ingest", {"documents": [...], "target": "rag"})`: build the inference RAG vector store (default target is `rag`).
-- `TripodOrchestrator.execute("inference", {"domain": "...", "input_data": {...}})`: runs RAG + prompting and prints the prompt (LLM call is intentionally pluggable).
+- `TripodOrchestrator.execute("inference", {"task_label": "...", "input_data": {...}})`: runs RAG + prompting and prints the prompt (LLM call is intentionally pluggable).
 - `TripodOrchestrator.execute("evaluate")`: dispatches to a registered evaluator (see `evaluation.entrypoint` + `evaluation.evaluator`); falls back to a stub logger if none is registered.
 
 ## Configuration (YAML)

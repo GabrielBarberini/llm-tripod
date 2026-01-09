@@ -19,7 +19,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Tripod")
 
-DEFAULT_CONFIG_PATH = Path("configs/iot_domain_config.yaml")
+DEFAULT_CONFIG_PATH = Path("configs/iot_config.yaml")
 
 
 class TripodOrchestrator:
@@ -106,12 +106,14 @@ class TripodOrchestrator:
                             "Input payload with 'input_data' is required for inference."
                         )
                     case task_input:
-                        domain = input_payload.get("domain", "Thermal Control")
+                        task_label = input_payload.get(
+                            "task_label", "Thermal Control"
+                        )
 
                 retrieved_context = self.rag.run(query=str(task_input))
 
                 prompt_context = {
-                    "domain": domain,
+                    "task_label": task_label,
                     "rag_context": retrieved_context,
                     "input_data": task_input,
                 }
@@ -171,7 +173,7 @@ class TripodOrchestrator:
 
         sft_rows = []
         for row in rows:
-            domain = row.get("domain", "IoT")
+            task_label = row.get("task_label", "IoT")
             match row.get("input_data"):
                 case dict() | list() as data:
                     resolved_input = data
@@ -183,7 +185,7 @@ class TripodOrchestrator:
             rag_context = self._resolve_raft_context(row)
             prompt = self.prompter.render_prompt(
                 {
-                    "domain": domain,
+                    "task_label": task_label,
                     "rag_context": rag_context,
                     "input_data": resolved_input,
                 }
@@ -368,6 +370,6 @@ if __name__ == "__main__":
         "inference",
         input_payload={
             "input_data": dummy_input,
-            "domain": "Thermal Control",
+            "task_label": "Thermal Control",
         },
     )
