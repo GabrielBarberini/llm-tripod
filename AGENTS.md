@@ -20,7 +20,7 @@ This repository hosts a modular Tripod framework for LLM control tasks (IoT exam
 - Dev tooling (format/lint/test): `pip install -r requirements-dev.txt`.
 - Inference demo (uses `configs/iot_domain_config.yaml`; requires RAG store + DSPy LM unless you switch to `prompting.backend: "raw"`):  
   ```bash
-  python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('inference', {'sensor_data': {'temp': 78.5, 'vibration': 1.2}})"
+  python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('inference', {'input_data': {'temp': 78.5, 'vibration': 1.2}})"
   ```
 - Training placeholder flow:  
   ```bash
@@ -43,8 +43,8 @@ This repository hosts a modular Tripod framework for LLM control tasks (IoT exam
   python -c "from main import TripodOrchestrator; TripodOrchestrator().execute('evaluate')"
   ```
 - To use a different config file, pass `TripodOrchestrator('configs/your_config.yaml')`.
-- Local smoke (downloads tiny HF models): `python tests/smoke_local.py`
-- End-to-end smoke (GPU recommended): `python tests/smoke_e2e.py`
+- Local smoke (downloads tiny HF models): `python tests/acceptance/smoke_local.py`
+- End-to-end smoke (GPU recommended): `python tests/acceptance/smoke_e2e.py`
 - Docker (optional): `docker build -t tripod .` then `docker run --rm --gpus all tripod python main.py`
 
 ## Coding Style & Naming Conventions

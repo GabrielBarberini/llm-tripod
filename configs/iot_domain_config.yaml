@@ -92,8 +92,8 @@ prompting:
     ### HISTORY (Context):
     {{ rag_context }}
 
-    ### CURRENT SENSOR STATE:
-    {{ sensor_data }}
+    ### CURRENT INPUT:
+    {{ input_data }}
 
     ### INSTRUCTION:
     Analyze the history and current state. Determine the optimal configuration.

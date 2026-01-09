@@ -28,7 +28,7 @@ from typing import Any
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -565,7 +565,7 @@ def main():
     subprocess.check_call(
         [
             "python",
-            str(ROOT / "tests" / "generate_smoke_dataset.py"),
+            str(ROOT / "tests" / "fixtures" / "generate_smoke_dataset.py"),
             "--out-dir",
             str(DATASETS_DIR),
             "--n",

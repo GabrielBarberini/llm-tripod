@@ -6,7 +6,7 @@ The sections below explain what each config block does and where it is used.
 ## Files
 
 - `configs/smoke_e2e_config.yaml`: end-to-end smoke test config used by
-  `tests/smoke_e2e.py`.
+  `tests/acceptance/smoke_e2e.py`.
 - `configs/iot_domain_config.yaml`: example production config
   (treat as inspiration and replace paths/values).
 
@@ -21,9 +21,11 @@ The sections below explain what each config block does and where it is used.
   with a `text` field (SFT format). Use `TripodOrchestrator.execute("prepare_train")`
   or pipeline-specific preprocessing to build that text.
 - Raw rows can include task-specific input fields plus `expected` (or `target`)
-  for the desired output. Optional fields like `rag_context`,
-  `raft_query`/`rag_query`, or `raft_filters`/`rag_filters` let you control
-  retrieval per row.
+  for the desired output. Optional fields include:
+  - `input_data`: task input data (dict, list, or JSON-serializable)
+  - `rag_context`: pre-computed retrieval context (string)
+  - `raft_query`/`rag_query`: query string for RAFT retrieval during prep
+  - `raft_filters`/`rag_filters`: metadata filters for retrieval (dict)
 - `training.adapter_output_dir`: output directory for LoRA/QLoRA adapters.
 - `training.hyperparameters.response_marker`: delimiter that splits prompt vs
   completion inside the training text.
@@ -33,7 +35,7 @@ The sections below explain what each config block does and where it is used.
 ### `raft.*` (RAFT) + `rag.*` (RAG) (core/rag.py)
 
 - `raft.enabled`: enable training-time retrieval (RAFT) when building
-  training examples in `tests/smoke_e2e.py` or via `TripodOrchestrator.execute("prepare_train")`.
+  training examples in `tests/acceptance/smoke_e2e.py` or via `TripodOrchestrator.execute("prepare_train")`.
 - `rag.enabled`: enable inference-time retrieval in `main.py` and
   the smoke evaluator.
 - `rag.vector_db_type` / `raft.vector_db_type`: store adapter selector; `local`
@@ -48,12 +50,13 @@ The sections below explain what each config block does and where it is used.
 ### `prompting.*` (core/prompting.py)
 
 - `prompting.system_prompt` and `prompting.user_prompt_structure`: prompt template.
+  - Template variables: `{{ domain }}`, `{{ rag_context }}`, `{{ input_data }}`
 - `prompting.backend`: `raw` renders the template; `dspy` executes a DSPy program.
 - `prompting.dspy.*`: DSPy options used when `prompting.backend: dspy`.
 
 ### `evaluation.*` (pipeline evaluation)
 
-- `evaluation.*` is consumed by evaluation scripts (for example `tests/smoke_e2e.py`)
+- `evaluation.*` is consumed by evaluation scripts (for example `tests/acceptance/smoke_e2e.py`)
   and by the `TripodOrchestrator.execute("evaluate")` stub (logs `test_set_path`).
 - `evaluation.entrypoint`: module path to import before evaluation (registers evaluators).
 - `evaluation.evaluator`: registry key for the evaluator to run (defaults to `stub`).

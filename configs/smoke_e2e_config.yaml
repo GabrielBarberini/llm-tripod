@@ -12,7 +12,7 @@ training:
     dropout: 0.05
     target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
   hyperparameters:
-    # SFT format: tests/smoke_e2e.py appends `ASSISTANT:` before the JSON response.
+    # SFT format: tests/acceptance/smoke_e2e.py appends `ASSISTANT:` before the JSON response.
     response_marker: "\nASSISTANT:\n"
     mask_prompt: true
 
@@ -65,8 +65,8 @@ prompting:
     ### HISTORY:
     {{ rag_context }}
 
-    ### SENSOR:
-    {{ sensor_data }}
+    ### INPUT:
+    {{ input_data }}
 
     ### INSTRUCTION:
     Use the policy numbers from HISTORY when action is set_thermal_profile.

@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
 from core.base import BaseLeg
 from core.config import DSPyConfig, PromptingConfig
 
 logger = logging.getLogger(__name__)
-
-_TEMPLATE_VAR_RE = re.compile(r"{{\s*([a-zA-Z_][\w\.]*)\s*}}")
 
 
 class PromptLeg(BaseLeg):
@@ -50,19 +47,21 @@ class PromptLeg(BaseLeg):
                 )
 
     def render_prompt(self, context: dict[str, Any]) -> str:
-        system_prompt = self._render_template(
-            self.config.system_prompt, context
-        )
-        user_prompt = self._render_template(
-            self.config.user_prompt_structure, context
-        )
+        domain, rag_context, input_data_str = self._normalize_context(context)
 
-        return f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}"
+        system_prompt = self.config.system_prompt.replace(
+            "{{ domain }}", domain
+        )
+        user_prompt = self.config.user_prompt_structure.replace(
+            "{{ rag_context }}", rag_context
+        )
+        user_prompt = user_prompt.replace("{{ input_data }}", input_data_str)
+
+        full_prompt = f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}"
+        return full_prompt
 
     def predict(self, context: dict[str, Any]) -> str:
-        domain, rag_context, sensor_data_str = self._normalize_dspy_context(
-            context
-        )
+        domain, rag_context, input_data_str = self._normalize_context(context)
         dspy = self._ensure_dspy()
         if getattr(dspy.settings, "lm", None) is None:
             raise RuntimeError(
@@ -70,58 +69,18 @@ class PromptLeg(BaseLeg):
                 "or set prompting.backend to 'raw'."
             )
         prediction = self._dspy_module(
-            domain=domain, rag_context=rag_context, sensor_data=sensor_data_str
+            domain=domain, rag_context=rag_context, input_data=input_data_str
         )
         return self._extract_prediction(prediction, self._dspy_output_field)
 
-    def _render_template(self, template: str, context: dict[str, Any]) -> str:
-        missing: set[str] = set()
-
-        def _resolve(path: str) -> Any:
-            cur: Any = context
-            for part in path.split("."):
-                match cur:
-                    case dict() as m if part in m:
-                        cur = m[part]
-                    case _:
-                        missing.add(path)
-                        return ""
-            return cur
-
-        def _format(value: Any) -> str:
-            match value:
-                case None:
-                    return ""
-                case dict() | list():
-                    return json.dumps(
-                        value, ensure_ascii=False, sort_keys=True
-                    )
-                case _:
-                    return str(value)
-
-        def _repl(match: re.Match) -> str:
-            key = match.group(1)
-            return _format(_resolve(key))
-
-        rendered = _TEMPLATE_VAR_RE.sub(_repl, template)
-        if missing:
-            missing_list = ", ".join(sorted(missing))
-            raise ValueError(
-                "Prompt rendering failed: missing template variables: "
-                f"{missing_list}. Provide them in the inference context (input_payload['context'])."
-            )
-        return rendered
-
-    def _normalize_dspy_context(
+    def _normalize_context(
         self, context: dict[str, Any]
     ) -> tuple[str, str, str]:
         match context.get("domain"):
             case str() as domain if domain.strip():
                 resolved_domain = domain.strip()
             case _:
-                raise ValueError(
-                    "DSPy prompting requires a non-empty 'domain' in context."
-                )
+                resolved_domain = "IoT"
 
         match context.get("rag_context"):
             case str() as rag_context:
@@ -131,19 +90,17 @@ class PromptLeg(BaseLeg):
             case other:
                 resolved_rag = str(other)
 
-        match context.get("sensor_data"):
-            case dict() | list() as sensor_data:
-                sensor_data_str = json.dumps(
-                    sensor_data, ensure_ascii=False, sort_keys=True
+        match context.get("input_data"):
+            case dict() | list() as data:
+                input_data_str = json.dumps(
+                    data, ensure_ascii=False, sort_keys=True
                 )
             case None:
-                raise ValueError(
-                    "DSPy prompting requires 'sensor_data' in context."
-                )
+                input_data_str = "{}"
             case other:
-                sensor_data_str = str(other)
+                input_data_str = str(other)
 
-        return resolved_domain, resolved_rag, sensor_data_str
+        return resolved_domain, resolved_rag, input_data_str
 
     def _ensure_dspy(self):
         if self._dspy_module is not None:
@@ -167,7 +124,7 @@ class PromptLeg(BaseLeg):
             case str() as field if field in {
                 "domain",
                 "rag_context",
-                "sensor_data",
+                "input_data",
             }:
                 raise ValueError(
                     "DSPy output_field conflicts with input field: "
@@ -192,11 +149,11 @@ class PromptLeg(BaseLeg):
                 else:
                     self.predict = dspy.Predict(signature)
 
-            def forward(self, domain: str, rag_context: str, sensor_data: str):
+            def forward(self, domain: str, rag_context: str, input_data: str):
                 return self.predict(
                     domain=domain,
                     rag_context=rag_context,
-                    sensor_data=sensor_data,
+                    input_data=input_data,
                 )
 
         self._dspy_module = TripodDSPyModule()
@@ -232,7 +189,7 @@ class PromptLeg(BaseLeg):
         return (
             template.replace("{{ domain }}", "[domain]")
             .replace("{{ rag_context }}", "[rag_context]")
-            .replace("{{ sensor_data }}", "[sensor_data]")
+            .replace("{{ input_data }}", "[input_data]")
         )
 
     def _build_dspy_signature(
@@ -242,8 +199,8 @@ class PromptLeg(BaseLeg):
             "__doc__": instructions,
             "domain": dspy.InputField(desc="Domain for the control task."),
             "rag_context": dspy.InputField(desc="Retrieved context snippets."),
-            "sensor_data": dspy.InputField(
-                desc="Current sensor readings as JSON."
+            "input_data": dspy.InputField(
+                desc="Task input data as JSON (e.g., sensor readings, query parameters, etc.)."
             ),
             output_field: dspy.OutputField(desc=output_desc),
         }

@@ -12,7 +12,7 @@ flowchart TD
   Train --> Adapter[Adapter output]
 ```
 
-- In `tests/smoke_e2e.py`, RAFT (training-time retrieval) enriches each training example before SFT when `raft.enabled` is true.
+- In `tests/acceptance/smoke_e2e.py`, RAFT (training-time retrieval) enriches each training example before SFT when `raft.enabled` is true.
 - `training.hyperparameters.response_marker` and `training.hyperparameters.mask_prompt` control loss masking: the prompt portion is ignored in the labels (`-100`) so only the completion contributes to loss (attention still sees the full prompt).
 
 ## Inference path (TripodOrchestrator.execute("inference"))
@@ -29,7 +29,7 @@ flowchart LR
 - `prompting.backend: dspy` returns a DSPy prediction string (requires `dspy.settings.configure(lm=...)`).
 - `main.py` does not call an LLM; it prints the prompt or DSPy output as a stub.
 
-## Evaluation path (tests/smoke_e2e.py)
+## Evaluation path (tests/acceptance/smoke_e2e.py)
 
 ```mermaid
 flowchart LR
@@ -48,7 +48,7 @@ flowchart LR
 
 ### When retrieval is applied
 
-- **RAFT (training-time retrieval)**: used when building training examples (for example in `tests/smoke_e2e.py`) by retrieving text and concatenating it into each example before SFT.
+- **RAFT (training-time retrieval)**: used when building training examples (for example in `tests/acceptance/smoke_e2e.py`) by retrieving text and concatenating it into each example before SFT.
 - **RAG (inference-time retrieval)**: used at prompt construction time in `TripodOrchestrator.execute("inference", ...)` and in the smoke evaluation loops.
 - The benchmark "with_rag" vs "without_rag" is always an inference-time toggle. RAFT vs no-RAFT tuning is controlled by `raft.enabled` and reflected in the tuned pass names.
 
@@ -66,7 +66,7 @@ flowchart LR
 
 ### Script flags (smoke)
 
-- `tests/smoke_e2e.py`: `--holdout-policies`, `--save-predictions`, `--eval-samples`, `--report-dir`, `--n`, `--num-policies`, `--train-policy-ratio`, `--test-ratio`, `--seed`.
-- `tests/generate_smoke_dataset.py`: `--holdout-policies` controls train/test policy ID overlap in the synthetic dataset.
+- `tests/acceptance/smoke_e2e.py`: `--holdout-policies`, `--save-predictions`, `--eval-samples`, `--report-dir`, `--n`, `--num-policies`, `--train-policy-ratio`, `--test-ratio`, `--seed`.
+- `tests/fixtures/generate_smoke_dataset.py`: `--holdout-policies` controls train/test policy ID overlap in the synthetic dataset.
 
 For config-to-runtime details, see `configs/README.md`.

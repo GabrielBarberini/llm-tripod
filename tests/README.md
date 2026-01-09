@@ -1,68 +1,38 @@
-# Tests
+# Testing Guidelines
 
-This folder documents the bundled smoke tests and their intent. It can also host
-future `pytest` tests.
+This project follows RocketPy's testing philosophy and conventions:
+https://docs.rocketpy.org/en/latest/development/testing.html. Keep tests fast,
+focused, and descriptive so contributors can understand intent at a glance.
 
-## End-to-end smoke (`tests/smoke_e2e.py`)
+## Philosophy and Structure
+- Unit tests are the minimum requirement for new features.
+- Prefer the AAA pattern: Arrange, Act, Assert.
+- Use parameterization for multiple scenarios.
+- Tests live under `tests/` with:
+  - `tests/unit/` for method-level or tightly scoped behavior.
+  - `tests/integration/` for cross-module behavior or I/O-heavy paths.
+  - `tests/acceptance/` for user-facing, end-to-end validation (add if needed).
+  - `tests/fixtures/` for shared fixtures.
 
-End-to-end smoke test: dataset generation, RAFT (training retrieval), RAG ingest,
-SFT training, and eval. This script is a template for new domains.
-It builds its own SFT dataset, so you do not need to run `prepare_train`.
+## Naming Conventions
+Test functions should follow one of these patterns:
+- `test_methodname`
+- `test_methodname_stateundertest`
+- `test_methodname_expectedbehaviour`
 
-Run:
+Every test must include a docstring that explicitly states the expected
+behavior or state being validated.
 
-```bash
-python3 tests/smoke_e2e.py --n 6000 --eval-samples 200
-```
+## Unit vs. Integration
+- Unit tests are method-level and should stay small; sociable tests are allowed
+  when dependencies are necessary to validate real behavior, but prefer mocks
+  when feasible.
+- Integration tests cover interactions across modules or external inputs,
+  including file or network I/O, or broad API surfaces.
 
-Useful flags:
-- `--num-policies 50`: number of distinct policy docs (example generator).
-- `--holdout-policies / --no-holdout-policies`: whether eval uses unseen document IDs.
-- `--report-dir <path>`: override report output location.
-- `--no-save-predictions`: skip writing per-sample JSONL (faster, smaller).
+## Fixtures
+Place shared fixtures in `tests/fixtures/` and expose them in
+`tests/conftest.py`. Keep fixture modules specific (e.g., bundle fixtures).
 
-Note: `--num-policies`/`--holdout-policies` apply to the bundled dataset generator
-(`tests/generate_smoke_dataset.py`).
-
-Evaluation passes (inference RAG toggle):
-- `base_with_rag`
-- `base_without_rag`
-- `tuned_no_raft_with_rag`
-- `tuned_no_raft_without_rag`
-- `tuned_raft_with_rag` (only when `raft.enabled` is true)
-- `tuned_raft_without_rag` (only when `raft.enabled` is true)
-
-Metrics reported by the default smoke evaluator:
-- `action_accuracy`: exact match on the parsed `action` field.
-- `param_accuracy`: schema-specific parameter match (exactness/tolerance rules live in the evaluator).
-- `thermal_param_accuracy`: accuracy over the `set_thermal_profile` subset only.
-
-When RAFT is enabled, `summary.json` also includes `raft_lift_*_param_accuracy` deltas
-that compare RAFT-trained adapters against no-RAFT adapters under the same inference
-RAG setting.
-
-Sampling knobs for the evaluator live under `evaluation.generation` in
-`configs/smoke_e2e_config.yaml` (default is deterministic).
-
-Artifacts produced under `training_data/reports/smoke_e2e/<run_id>/`:
-- `summary.md`, `summary.json`, `run.log`
-- `predictions/*.jsonl`
-
-Datasets + retrieval docs are generated under `training_data/datasets/smoke_e2e/`.
-The vector store is written to `training_data/vectordb/smoke_e2e/`.
-
-## Local smoke (`tests/smoke_local.py`)
-
-Lightweight, single-machine smoke test focused on local training + inference behavior.
-It builds a tiny in-memory vector store, fine-tunes a small model, and scores on a
-held-out split.
-
-Run:
-
-```bash
-python3 tests/smoke_local.py
-```
-
-Notes:
-- Downloads Hugging Face models on first run (internet required).
-- Uses a small hardcoded dataset and a few-shot prompt to keep runtime short.
+## Running Tests
+- `make test`

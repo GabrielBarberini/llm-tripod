@@ -1,7 +1,7 @@
 # LLM Tripod
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/MPP-v1.0.0-blue)](https://deepwiki.com/GabrielBarberini/llm-tripod)
+[![Version](https://img.shields.io/badge/MPP-v1.1.0-blue)](https://deepwiki.com/GabrielBarberini/llm-tripod)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/GabrielBarberini/llm-tripod)
 
 Tripod is a lightweight, modular **LLM integration-test harness** for fast end-to-end iteration (not a full training platform). It separates the pipeline into three “legs”:
@@ -51,7 +51,7 @@ flowchart TD
 ```
 
 - Runs **in phases**: ingest → build training file → train.
-- In the end-to-end smoke test (`tests/smoke_e2e.py`), the SFT text is built as `PROMPT + ASSISTANT + TARGET` and the `ASSISTANT:` delimiter is used to mask prompt tokens during training (completion-style SFT).
+- In the end-to-end smoke test (`tests/acceptance/smoke_e2e.py`), the SFT text is built as `PROMPT + ASSISTANT + TARGET` and the `ASSISTANT:` delimiter is used to mask prompt tokens during training (completion-style SFT).
 - RAFT enrichment happens during training-file construction when `raft.enabled` is true; if it is false or ingestion is skipped, training examples get empty context.
 
 ### Inference
@@ -139,7 +139,7 @@ Tripod will return the DSPy prediction string. Use `prompting.backend: "raw"` fo
 ### Integration smoke test
 
 ```bash
-python3 tests/smoke_e2e.py --n 6000 --eval-samples 200
+python3 tests/acceptance/smoke_e2e.py --n 6000 --eval-samples 200
 ```
 
 This is a framework validation loop (data generation + RAFT/RAG + training + evaluation). It is a test scaffold, not the domain example.
@@ -151,7 +151,7 @@ For a domain example, see `pipelines/README.md`. See `tests/README.md` for flags
 - `TripodOrchestrator.execute("train")`: run LoRA/QLoRA training (expects an SFT dataset at `training.dataset_path`).
 - `TripodOrchestrator.execute("ingest", {"documents": [...], "target": "raft"})`: build the RAFT vector store for training-time retrieval.
 - `TripodOrchestrator.execute("ingest", {"documents": [...], "target": "rag"})`: build the inference RAG vector store (default target is `rag`).
-- `TripodOrchestrator.execute("inference", {"domain": "...", "sensor_data": {...}})`: runs RAG + prompting and prints the prompt (LLM call is intentionally pluggable).
+- `TripodOrchestrator.execute("inference", {"domain": "...", "input_data": {...}})`: runs RAG + prompting and prints the prompt (LLM call is intentionally pluggable).
 - `TripodOrchestrator.execute("evaluate")`: dispatches to a registered evaluator (see `evaluation.entrypoint` + `evaluation.evaluator`); falls back to a stub logger if none is registered.
 
 ## Configuration (YAML)
@@ -164,7 +164,7 @@ for the full config reference and runtime behavior.
 
 - **RAFT (`raft.*`)**: retrieval runs offline during dataset construction using the configured retriever. Retrieved text is concatenated into each training prompt before SFT so the model learns to use retrieved context at inference; the training loop itself never queries a retriever.
 - **RAG (`rag.*`)**: inference-time retrieval that runs per request, injecting context into the prompt right before generation.
-- In `tests/smoke_e2e.py`, RAFT toggles whether a second adapter is trained; the report compares RAFT vs no-RAFT adapters under identical inference-time RAG settings.
+- In `tests/acceptance/smoke_e2e.py`, RAFT toggles whether a second adapter is trained; the report compares RAFT vs no-RAFT adapters under identical inference-time RAG settings.
 - You can point both modes at the same vector store or keep separate stores for controlled experiments.
 
 ## Adapting To Your Domain
