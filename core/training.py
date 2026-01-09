@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -117,37 +116,16 @@ class TrainingLeg(BaseLeg):
         ]
 
         def to_text(row):
-            """Normalize text rows and smoke-format rows into SFT strings."""
+            """Normalize SFT rows into text strings."""
             match row:
                 case {"text": str() as text}:
                     return {"text": text}
                 case _:
-                    expected = row.get("expected", {})
-                    prompt = {
-                        "domain": row.get("domain", "Thermal Control"),
-                        "device_profile": row.get("device_profile", "eco"),
-                        "sensor_data": row.get("sensor_data", {}),
-                        "rag_context": row.get("rag_context", ""),
-                    }
-            system = (
-                "You are a safety-first Industrial IoT controller.\n"
-                "Return ONLY valid JSON with keys: action, parameters, reasoning."
-            )
-            user = (
-                f"DEVICE_PROFILE: {prompt['device_profile']}\n"
-                f"HISTORY:\n{prompt['rag_context']}\n"
-                f"SENSOR:\n{json.dumps(prompt['sensor_data'])}\n"
-                "OUTPUT JSON:"
-            )
-            target = json.dumps(
-                {
-                    "action": expected.get("action"),
-                    "parameters": expected.get("parameters"),
-                    "reasoning": expected.get("reasoning"),
-                },
-                ensure_ascii=False,
-            )
-            return {"text": f"SYSTEM:\n{system}\n\nUSER:\n{user}\n{target}"}
+                    raise ValueError(
+                        "Training rows must include a 'text' field. "
+                        "Use TripodOrchestrator.execute('prepare_train') "
+                        "or build SFT text in your pipeline."
+                    )
 
         ds = ds.map(to_text, remove_columns=ds.column_names)
 

@@ -17,10 +17,9 @@ The sections below explain what each config block does and where it is used.
 - `training.enabled`: skip adapter training when false.
 - `training.base_model`: base checkpoint loaded by the trainer and evaluator.
 - `training.dataset_path`: training JSON/JSONL/text path (the smoke test
-  overwrites this with its generated dataset paths). When the path points to
-  JSON/JSONL rows without a `text` field, `TripodOrchestrator.execute("prepare_train")`
-  builds an SFT dataset using `prompting.*` plus optional RAFT retrieval. If you
-  provide `text` rows directly, each row should be `PROMPT + response_marker + TARGET`.
+  overwrites this with its generated dataset paths). The trainer expects rows
+  with a `text` field (SFT format). Use `TripodOrchestrator.execute("prepare_train")`
+  or pipeline-specific preprocessing to build that text.
 - Raw rows can include task-specific input fields plus `expected` (or `target`)
   for the desired output. Optional fields like `rag_context`,
   `raft_query`/`rag_query`, or `raft_filters`/`rag_filters` let you control
